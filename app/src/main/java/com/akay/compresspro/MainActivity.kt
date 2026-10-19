@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     private var screen = "home"
 
-    // put your privacy policy link here later (it opens from Settings)
     private val PRIVACY_URL = ""
 
     private val permLauncher = registerForActivityResult(
@@ -44,8 +43,6 @@ class MainActivity : ComponentActivity() {
         Prefs.setAsked(true)
         if (hasPerm()) showHome() else showPermission()
     }
-
-    // ---------- small helpers ----------
 
     private fun tr(s: String): String = T.t(s)
 
@@ -72,7 +69,6 @@ class MainActivity : ComponentActivity() {
         return d
     }
 
-    // style: 0 normal, 1 medium, 2 bold
     private fun tv(text: String, sp: Float, color: Int, style: Int = 0): TextView {
         val t = TextView(this)
         t.text = text
@@ -86,7 +82,6 @@ class MainActivity : ComponentActivity() {
         return t
     }
 
-    // bold text with a left-to-right colour gradient
     private fun gradText(text: String, sp: Float, c1: Int, c2: Int): TextView {
         val t = tv(text, sp, c1, 2)
         t.post {
@@ -97,7 +92,6 @@ class MainActivity : ComponentActivity() {
         return t
     }
 
-    // shows a screen. `bottom` is the colour of the strip behind the phone's navigation bar
     private fun setScreen(content: View, bottom: Int) {
         val wrap = LinearLayout(this)
         wrap.orientation = LinearLayout.VERTICAL
@@ -125,8 +119,6 @@ class MainActivity : ComponentActivity() {
         c.isAppearanceLightNavigationBars = !P.dark
         ViewCompat.requestApplyInsets(wrap)
     }
-
-    // ---------- permission ----------
 
     private fun permList(): Array<String> = when {
         Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -192,8 +184,6 @@ class MainActivity : ComponentActivity() {
         setScreen(c, P.bg)
     }
 
-    // ---------- lifecycle ----------
-
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -227,8 +217,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------- shared pieces ----------
-
     private fun logoTile(sizeDp: Int): View {
         val f = FrameLayout(this)
         f.background = grad(
@@ -251,9 +239,6 @@ class MainActivity : ComponentActivity() {
     private fun tagline(sp: Float): TextView =
         tv(tr("Smaller Size") + "  \u2022  " + tr("Same Quality"), sp, if (P.dark) 0xFF9DB8E8.toInt() else P.sub)
 
-    // FIX: Home/Settings label now gets explicit WRAP_CONTENT width so it stays
-    // centered under the icon. Without this, a VERTICAL LinearLayout gives a
-    // child added without layout params a MATCH_PARENT width, pushing text left.
     private fun navBar(sel: Int): View {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
@@ -286,8 +271,6 @@ class MainActivity : ComponentActivity() {
         }
         return bar
     }
-
-    // ---------- home ----------
 
     private fun imageTile(): View {
         val f = FrameLayout(this)
@@ -362,11 +345,8 @@ class MainActivity : ComponentActivity() {
         screen = "home"
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        // FIX: increased bottom padding from 24 to 70 so there is a clearly
-        // visible dark gap between the PDF card and the wave graphic below it
         c.setPadding(dp(20), dp(16), dp(20), dp(70))
 
-        // top row: logo, name, crown
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
@@ -382,7 +362,6 @@ class MainActivity : ComponentActivity() {
         head.addView(crown, lp(dp(34), dp(34)))
         c.addView(head, lp(MATCH, WRAP))
 
-        // headline and picture
         val hero = LinearLayout(this)
         hero.orientation = LinearLayout.HORIZONTAL
         hero.gravity = Gravity.CENTER_VERTICAL
@@ -402,7 +381,6 @@ class MainActivity : ComponentActivity() {
         hero.addView(HeroArt(this), lp(dp(124), dp(116)))
         c.addView(hero, lpm(MATCH, WRAP, 0, 24, 0, 0))
 
-        // the two big cards
         val soon = { toast(tr("Coming in the next stage")) }
         c.addView(
             bigCard(
@@ -436,8 +414,6 @@ class MainActivity : ComponentActivity() {
         root.addView(navBar(0), lp(MATCH, WRAP))
         setScreen(root, P.navBg)
     }
-
-    // ---------- settings ----------
 
     private fun cardBox(): LinearLayout {
         val b = LinearLayout(this)
@@ -496,7 +472,6 @@ class MainActivity : ComponentActivity() {
         c.orientation = LinearLayout.VERTICAL
         c.setPadding(dp(18), dp(14), dp(18), dp(24))
 
-        // title row
         val top = LinearLayout(this)
         top.orientation = LinearLayout.HORIZONTAL
         top.gravity = Gravity.CENTER_VERTICAL
@@ -508,7 +483,6 @@ class MainActivity : ComponentActivity() {
         top.addView(title)
         c.addView(top, lp(MATCH, WRAP))
 
-        // app card
         val app = LinearLayout(this)
         app.orientation = LinearLayout.HORIZONTAL
         app.gravity = Gravity.CENTER_VERTICAL
@@ -519,4 +493,86 @@ class MainActivity : ComponentActivity() {
         at.orientation = LinearLayout.VERTICAL
         at.setPadding(dp(14), 0, 0, 0)
         at.addView(brandRow(18f))
-        at.addVie
+        at.addView(tagline(11f))
+        app.addView(at, lp(0, WRAP, 1f))
+        c.addView(app, lpm(MATCH, WRAP, 0, 18, 0, 0))
+
+        val themeName = tr(if (P.dark) "Dark" else "Light")
+        val langName = if (T.hi) "हिन्दी" else "English"
+        val qNames = arrayOf(tr("Low"), tr("Medium"), tr("High"))
+        val sNames = arrayOf(tr("Internal"), tr("Downloads"))
+
+        val list = cardBox()
+        list.addView(row(K.PALETTE, tr("App Theme"), tr("Choose your preferred theme"), themeName, false) {
+            choose(tr("App Theme"), arrayOf(tr("Dark"), tr("Light")), if (P.dark) 0 else 1) { w ->
+                Prefs.setDark(w == 0)
+                showSettings()
+            }
+        })
+        list.addView(row(K.GLOBE, tr("Language"), tr("Select app language"), langName, false) {
+            choose(tr("Language"), arrayOf("English", "हिन्दी"), Prefs.lang()) { w ->
+                Prefs.setLang(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
+            choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
+                Prefs.setQuality(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
+            choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
+                Prefs.setStorage(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
+            AlertDialog.Builder(this)
+                .setTitle("CompressPro  v1.0.0")
+                .setMessage(
+                    tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
+                        tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
+                )
+                .setPositiveButton(tr("Close"), null)
+                .show()
+        })
+        c.addView(list, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+        val list2 = cardBox()
+        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) {
+            if (PRIVACY_URL.isEmpty()) {
+                toast(tr("Privacy policy link will be added soon"))
+            } else {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
+                } catch (e: Throwable) {
+                }
+            }
+        })
+        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
+            } catch (e: Throwable) {
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
+                    )
+                } catch (e2: Throwable) {
+                    toast(tr("Could not open Play Store"))
+                }
+            }
+        })
+        c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+        val sv = ScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(c)
+
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.addView(sv, lp(MATCH, 0, 1f))
+        root.addView(navBar(1), lp(MATCH, WRAP))
+        setScreen(root, P.navBg)
+    }
+}
