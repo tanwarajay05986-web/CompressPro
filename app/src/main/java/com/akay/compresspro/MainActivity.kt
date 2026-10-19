@@ -3,7 +3,6 @@ package com.akay.compresspro
 import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -15,36 +14,40 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : ComponentActivity() {
 
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
-
     private var screen = "home"
-    private lateinit var prefs: SharedPreferences
-    private var darkMode = false
-    private lateinit var root: FrameLayout
 
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted() }
+    private val PRIVACY_URL = ""
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-    private fun dpf(v: Int): Float = v * resources.displayMetrics.density
-    private fun tr(s: String): String = s
-
-    private fun lp(w: Int, h: Int): LinearLayout.LayoutParams {
-        return LinearLayout.LayoutParams(w, h)
+    private val permLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        Prefs.setAsked(true)
+        if (hasPerm()) showHome() else showPermission()
     }
+
+    private fun tr(s: String): String = T.t(s)
+
+    private fun lp(w: Int, h: Int, wt: Float = 0f): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(w, h, wt)
 
     private fun lpm(w: Int, h: Int, l: Int, t: Int, r: Int, b: Int): LinearLayout.LayoutParams {
         val p = LinearLayout.LayoutParams(w, h)
@@ -52,417 +55,524 @@ class MainActivity : ComponentActivity() {
         return p
     }
 
-    private fun rr(color: Int, radius: Float): GradientDrawable {
+    private fun rr(color: Int, rDp: Int, stroke: Int = 0, strokeDp: Int = 0): GradientDrawable {
         val d = GradientDrawable()
         d.setColor(color)
-        d.cornerRadius = radius
+        d.cornerRadius = dp(rDp).toFloat()
+        if (strokeDp > 0) d.setStroke(dp(strokeDp), stroke)
         return d
     }
 
-    private fun grad(colors: IntArray, radius: Float): GradientDrawable {
-        val d = GradientDrawable(GradientDrawable.Orientation.TL_BR, colors)
-        d.cornerRadius = radius
+    private fun grad(colors: IntArray, o: GradientDrawable.Orientation, rDp: Int): GradientDrawable {
+        val d = GradientDrawable(o, colors)
+        d.cornerRadius = dp(rDp).toFloat()
         return d
     }
 
-    private fun tv(text: String, size: Float, color: Int, bold: Boolean = false): TextView {
+    private fun tv(text: String, sp: Float, color: Int, style: Int = 0): TextView {
         val t = TextView(this)
         t.text = text
-        t.textSize = size
+        t.textSize = sp
         t.setTextColor(color)
-        if (bold) t.typeface = Typeface.DEFAULT_BOLD
+        t.typeface = when (style) {
+            2 -> Typeface.DEFAULT_BOLD
+            1 -> Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            else -> Typeface.DEFAULT
+        }
         return t
     }
 
-    private fun gradText(text: String, size: Float, colors: IntArray): TextView {
-        val t = tv(text, size, Color.WHITE, true)
+    private fun gradText(text: String, sp: Float, c1: Int, c2: Int): TextView {
+        val t = tv(text, sp, c1, 2)
         t.post {
-            val width = t.paint.measureText(text)
-            val shader = LinearGradient(0f, 0f, width, t.textSize, colors, null, Shader.TileMode.CLAMP)
-            t.paint.shader = shader
+            val w = t.paint.measureText(t.text.toString())
+            t.paint.shader = LinearGradient(0f, 0f, w, 0f, c1, c2, Shader.TileMode.CLAMP)
             t.invalidate()
         }
         return t
     }
 
-    private fun colBg(): Int = if (darkMode) 0xFF0E0E12.toInt() else 0xFFFFFFFF.toInt()
-    private fun colCard(): Int = if (darkMode) 0xFF1B1B20.toInt() else 0xFFF4F4F7.toInt()
-    private fun colText(): Int = if (darkMode) 0xFFFFFFFF.toInt() else 0xFF15151A.toInt()
-    private fun colTextSub(): Int = if (darkMode) 0xFFAAAAB2.toInt() else 0xFF6D6D78.toInt()
-    private fun colNavBg(): Int = if (darkMode) 0xFF18181C.toInt() else 0xFFF6F6F9.toInt()
-    private fun colNavInactive(): Int = if (darkMode) 0xFF75757D.toInt() else 0xFFAFAFB8.toInt()
-    private fun colDivider(): Int = if (darkMode) 0xFF2A2A30.toInt() else 0xFFE6E6EB.toInt()
-    private fun colAccent(): Int = 0xFFFF3D6E.toInt()
-
-    private fun applyStatusBarStyle() {
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.isAppearanceLightStatusBars = !darkMode
-    }
-
-    private fun permList(): Array<String> {
-        return if (Build.VERSION.SDK_INT >= 33) {
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    private fun setScreen(content: View, bottom: Int) {
+        val wrap = LinearLayout(this)
+        wrap.orientation = LinearLayout.VERTICAL
+        wrap.setBackgroundColor(P.bg)
+        val tp = View(this)
+        val bp = View(this)
+        bp.setBackgroundColor(bottom)
+        wrap.addView(tp, lp(MATCH, 0))
+        wrap.addView(content, lp(MATCH, 0, 1f))
+        wrap.addView(bp, lp(MATCH, 0))
+        ViewCompat.setOnApplyWindowInsetsListener(wrap) { _, ins ->
+            val sb = ins.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val ime = ins.getInsets(WindowInsetsCompat.Type.ime())
+            (tp.layoutParams as LinearLayout.LayoutParams).height = sb.top
+            (bp.layoutParams as LinearLayout.LayoutParams).height = maxOf(sb.bottom, ime.bottom)
+            tp.requestLayout()
+            bp.requestLayout()
+            WindowInsetsCompat.CONSUMED
         }
+        setContentView(wrap)
+        val c = WindowInsetsControllerCompat(window, wrap)
+        c.isAppearanceLightStatusBars = !P.dark
+        c.isAppearanceLightNavigationBars = !P.dark
+        ViewCompat.requestApplyInsets(wrap)
     }
 
-    private fun hasPerm(): Boolean {
-        return permList().all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
+    private fun permList(): Array<String> = when {
+        Build.VERSION.SDK_INT >= 34 -> arrayOf(
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+        )
+        Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
-    private fun permBlocked(): Boolean {
-        return permList().any { !shouldShowRequestPermissionRationale(it) } && !hasPerm()
+    private fun granted(p: String): Boolean =
+        ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    private fun hasPerm(): Boolean = when {
+        Build.VERSION.SDK_INT >= 34 ->
+            granted(Manifest.permission.READ_MEDIA_IMAGES) ||
+                granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        Build.VERSION.SDK_INT >= 33 -> granted(Manifest.permission.READ_MEDIA_IMAGES)
+        else -> granted(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
-    private fun granted() {
-        if (hasPerm()) setScreen("home")
+    private fun permBlocked(): Boolean =
+        Prefs.asked() && !shouldShowRequestPermissionRationale(permList()[0])
+
+    private fun showPermission() {
+        screen = "perm"
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.gravity = Gravity.CENTER
+        c.setPadding(dp(32), dp(32), dp(32), dp(32))
+
+        c.addView(logoTile(96), lp(dp(96), dp(96)))
+        val t = tv(tr("Permission needed"), 20f, P.text, 2)
+        t.gravity = Gravity.CENTER
+        c.addView(t, lpm(MATCH, WRAP, 0, 26, 0, 10))
+        val s = tv(
+            tr("CompressPro needs access to your photos to pick images and PDFs. Without this permission the app cannot work."),
+            13f, P.sub
+        )
+        s.gravity = Gravity.CENTER
+        c.addView(s, lp(MATCH, WRAP))
+
+        val blocked = permBlocked()
+        val b = tv(tr(if (blocked) "Open Settings" else "Allow access"), 16f, Color.WHITE, 2)
+        b.gravity = Gravity.CENTER
+        b.background = grad(
+            intArrayOf(0xFF12C2FF.toInt(), 0xFF3B5BFF.toInt(), 0xFF8A3DFF.toInt()),
+            GradientDrawable.Orientation.LEFT_RIGHT, 30
+        )
+        b.setOnClickListener {
+            if (blocked) {
+                try {
+                    val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    i.data = Uri.parse("package:$packageName")
+                    startActivity(i)
+                } catch (e: Throwable) {
+                }
+            } else {
+                permLauncher.launch(permList())
+            }
+        }
+        c.addView(b, lpm(MATCH, 58, 0, 34, 0, 0))
+        setScreen(c, P.bg)
     }
 
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences("cp_settings", MODE_PRIVATE)
-        darkMode = prefs.getBoolean("dark_mode", false)
-        root = FrameLayout(this)
-        setContentView(root)
-        applyStatusBarStyle()
-        if (hasPerm()) setScreen("home") else showPermission()
+        Prefs.init(this)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        try {
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+            window.isNavigationBarContrastEnforced = false
+        } catch (e: Throwable) {
+        }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (screen == "settings") showHome() else finish()
+            }
+        })
+        if (hasPerm()) {
+            showHome()
+        } else {
+            showPermission()
+            if (!Prefs.asked()) permLauncher.launch(permList())
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (screen == "permission" && hasPerm()) setScreen("home")
-    }
-
-    override fun onBackPressed() {
-        if (screen == "settings") {
-            setScreen("home")
-        } else {
-            super.onBackPressed()
+        if (screen == "perm" && hasPerm()) {
+            showHome()
+        } else if (screen != "perm" && !hasPerm()) {
+            showPermission()
         }
     }
 
-    private fun setScreen(s: String) {
-        screen = s
-        if (s == "settings") showSettings() else showHome()
+    private fun logoTile(sizeDp: Int): View {
+        val f = FrameLayout(this)
+        f.background = grad(
+            intArrayOf(0xFF12C2FF.toInt(), 0xFF3B5BFF.toInt(), 0xFF8A3DFF.toInt()),
+            GradientDrawable.Orientation.TL_BR, (sizeDp * 0.28f).toInt()
+        )
+        val ic = dp((sizeDp * 0.62f).toInt())
+        f.addView(IconView(this, K.IMAGE, Color.WHITE), FrameLayout.LayoutParams(ic, ic, Gravity.CENTER))
+        return f
     }
 
-    private fun choose(title: String, options: Array<String>, current: Int, onSelect: (Int) -> Unit) {
+    private fun brandRow(sp: Float): View {
+        val r = LinearLayout(this)
+        r.orientation = LinearLayout.HORIZONTAL
+        r.addView(tv("Compress", sp, P.text, 2))
+        r.addView(gradText("Pro", sp, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
+        return r
+    }
+
+    private fun tagline(sp: Float): TextView =
+        tv(tr("Smaller Size") + "  \u2022  " + tr("Same Quality"), sp, if (P.dark) 0xFF9DB8E8.toInt() else P.sub)
+
+    private fun navBar(sel: Int): View {
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        val d = GradientDrawable()
+        d.setColor(P.navBg)
+        val r = dp(28).toFloat()
+        d.cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+        d.setStroke(dp(1), P.cardEdge)
+        bar.background = d
+        bar.setPadding(dp(12), dp(8), dp(12), dp(10))
+        for (i in 0..1) {
+            val on = i == sel
+            val col = if (on) P.blue else P.navOff
+            val item = LinearLayout(this)
+            item.orientation = LinearLayout.VERTICAL
+            item.gravity = Gravity.CENTER_HORIZONTAL
+            item.addView(IconView(this, if (i == 0) K.HOME else K.GEAR, col), lp(dp(24), dp(24)))
+            val t = tv(tr(if (i == 0) "Home" else "Settings"), 11f, col, 1)
+            t.gravity = Gravity.CENTER_HORIZONTAL
+            t.setPadding(0, dp(2), 0, dp(6))
+            item.addView(t, lp(WRAP, WRAP))
+            val line = View(this)
+            if (on) line.background = rr(P.blue, 2)
+            item.addView(line, lp(dp(66), dp(3)))
+            item.setOnClickListener {
+                if (i == 0 && screen != "home") showHome()
+                if (i == 1 && screen != "settings") showSettings()
+            }
+            bar.addView(item, lp(0, WRAP, 1f))
+        }
+        return bar
+    }
+
+    private fun imageTile(): View {
+        val f = FrameLayout(this)
+        f.background = rr(0x33FFFFFF.toInt(), 22)
+        f.addView(IconView(this, K.IMAGE, Color.WHITE), FrameLayout.LayoutParams(dp(50), dp(50), Gravity.CENTER))
+        f.addView(badge(0xFF2F5BFF.toInt(), 0xFFB9D4FF.toInt()), badgeLp())
+        return f
+    }
+
+    private fun pdfTile(): View {
+        val f = FrameLayout(this)
+        f.background = rr(0x33FFFFFF.toInt(), 22)
+        f.addView(PdfGlyph(this), FrameLayout.LayoutParams(dp(54), dp(54), Gravity.CENTER))
+        f.addView(badge(0xFFE0245A.toInt(), 0xFFFFB3C6.toInt()), badgeLp())
+        return f
+    }
+
+    private fun badge(fill: Int, edge: Int): View {
+        val b = FrameLayout(this)
+        val bd = GradientDrawable()
+        bd.shape = GradientDrawable.OVAL
+        bd.setColor(fill)
+        bd.setStroke(dp(2), edge)
+        b.background = bd
+        b.addView(IconView(this, K.RESIZE, Color.WHITE), FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER))
+        return b
+    }
+
+    private fun badgeLp(): FrameLayout.LayoutParams {
+        val l = FrameLayout.LayoutParams(dp(28), dp(28), Gravity.BOTTOM or Gravity.END)
+        l.rightMargin = dp(2)
+        l.bottomMargin = dp(2)
+        return l
+    }
+
+    private fun bigCard(
+        colors: IntArray, tile: View, title: String, sub: String, desc: String,
+        shadow: Int, onClick: () -> Unit
+    ): View {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.HORIZONTAL
+        card.gravity = Gravity.CENTER_VERTICAL
+        card.setPadding(dp(16), dp(18), dp(16), dp(18))
+        card.background = grad(colors, GradientDrawable.Orientation.TL_BR, 26)
+        card.elevation = dp(8).toFloat()
+        card.outlineSpotShadowColor = shadow
+        card.outlineAmbientShadowColor = shadow
+        card.addView(tile, lp(dp(78), dp(78)))
+
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(16), 0, dp(6), 0)
+        col.addView(tv(title, 19f, Color.WHITE, 2))
+        col.addView(tv(sub, 15f, Color.WHITE, 1))
+        val d = tv(desc, 12.5f, 0xDDFFFFFF.toInt())
+        d.setPadding(0, dp(8), 0, 0)
+        col.addView(d)
+        card.addView(col, lp(0, WRAP, 1f))
+
+        val chev = FrameLayout(this)
+        val cd = GradientDrawable()
+        cd.shape = GradientDrawable.OVAL
+        cd.setColor(0x553A1AA0.toInt())
+        chev.background = cd
+        chev.addView(IconView(this, K.CHEV_R, Color.WHITE), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+        card.addView(chev, lp(dp(42), dp(42)))
+        card.setOnClickListener { onClick() }
+        return card
+    }
+
+    private fun showHome() {
+        screen = "home"
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.setPadding(dp(20), dp(16), dp(20), dp(20))
+
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        head.addView(logoTile(58), lp(dp(58), dp(58)))
+        val ht = LinearLayout(this)
+        ht.orientation = LinearLayout.VERTICAL
+        ht.setPadding(dp(14), 0, dp(8), 0)
+        ht.addView(brandRow(20f))
+        ht.addView(tagline(11f))
+        head.addView(ht, lp(0, WRAP, 1f))
+        val crown = IconView(this, K.CROWN, P.gold)
+        crown.setOnClickListener { toast(tr("CompressPro is 100% free. No subscription!")) }
+        head.addView(crown, lp(dp(34), dp(34)))
+        c.addView(head, lp(MATCH, WRAP))
+
+        val hero = LinearLayout(this)
+        hero.orientation = LinearLayout.HORIZONTAL
+        hero.gravity = Gravity.CENTER_VERTICAL
+        val hl = LinearLayout(this)
+        hl.orientation = LinearLayout.VERTICAL
+        hl.addView(tv(tr("Make Your Files"), 20f, P.text, 2))
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.addView(gradText(tr("Smaller"), 20f, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
+        row.addView(tv(" & ", 20f, P.text, 2))
+        row.addView(gradText(tr("Lighter"), 20f, 0xFF8A5BFF.toInt(), 0xFFC056FF.toInt()))
+        hl.addView(row)
+        val d = tv(tr("Compress and resize your images and PDFs in just a few taps."), 12f, P.sub)
+        d.setPadding(0, dp(10), 0, 0)
+        hl.addView(d)
+        hero.addView(hl, lp(0, WRAP, 1f))
+        hero.addView(HeroArt(this), lp(dp(124), dp(116)))
+        c.addView(hero, lpm(MATCH, WRAP, 0, 24, 0, 0))
+
+        val soon = { toast(tr("Coming in the next stage")) }
+        c.addView(
+            bigCard(
+                intArrayOf(0xFF12C2FF.toInt(), 0xFF2F6BFF.toInt(), 0xFF7A2BFF.toInt()), imageTile(),
+                tr("Image"), tr("Compress / Resize"),
+                tr("Reduce image size and adjust dimensions without losing quality."),
+                0xFF2F6BFF.toInt(), soon
+            ),
+            lpm(MATCH, WRAP, 0, 22, 0, 0)
+        )
+        c.addView(
+            bigCard(
+                intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()), pdfTile(),
+                tr("PDF"), tr("Compress / Resize"),
+                tr("Make your PDF files smaller and fit your needs."),
+                0xFFFF3D6E.toInt(), soon
+            ),
+            lpm(MATCH, WRAP, 0, 14, 0, 0)
+        )
+
+        val frame = FrameLayout(this)
+        frame.addView(WaveView(this), FrameLayout.LayoutParams(MATCH, dp(130), Gravity.BOTTOM))
+        val sv = ScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(c)
+        frame.addView(sv, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.addView(frame, lp(MATCH, 0, 1f))
+        root.addView(navBar(0), lp(MATCH, WRAP))
+        setScreen(root, P.navBg)
+    }
+
+    private fun cardBox(): LinearLayout {
+        val b = LinearLayout(this)
+        b.orientation = LinearLayout.VERTICAL
+        b.background = rr(P.card, 22, P.cardEdge, 1)
+        b.setPadding(dp(16), dp(4), dp(16), dp(4))
+        return b
+    }
+
+    private fun row(
+        icon: Int, title: String, sub: String?, value: String?, last: Boolean, onClick: () -> Unit
+    ): View {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        val r = LinearLayout(this)
+        r.orientation = LinearLayout.HORIZONTAL
+        r.gravity = Gravity.CENTER_VERTICAL
+        r.setPadding(0, dp(14), 0, dp(14))
+        r.addView(IconView(this, icon, P.iconSoft), lp(dp(34), dp(34)))
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(16), 0, dp(6), 0)
+        col.addView(tv(title, 15f, P.text, 1))
+        if (sub != null) col.addView(tv(sub, 12f, P.sub))
+        r.addView(col, lp(0, WRAP, 1f))
+        if (value != null) {
+            val v = tv(value, 14f, P.sub)
+            v.setPadding(0, 0, dp(8), 0)
+            r.addView(v)
+        }
+        r.addView(IconView(this, K.CHEV_R, P.sub), lp(dp(18), dp(18)))
+        r.setOnClickListener { onClick() }
+        box.addView(r)
+        if (!last) {
+            val dv = View(this)
+            dv.setBackgroundColor(P.divider)
+            box.addView(dv, lpm(MATCH, 1, 54, 0, 0, 0))
+        }
+        return box
+    }
+
+    private fun choose(title: String, items: Array<String>, sel: Int, onPick: (Int) -> Unit) {
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setSingleChoiceItems(options, current) { dialog, which ->
-                onSelect(which)
-                dialog.dismiss()
+            .setSingleChoiceItems(items, sel) { d, w ->
+                d.dismiss()
+                onPick(w)
             }
             .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
-    private fun showThemeDialog() {
-        choose(tr("App Theme"), arrayOf(tr("Light"), tr("Dark")), if (darkMode) 1 else 0) { which ->
-            darkMode = which == 1
-            prefs.edit().putBoolean("dark_mode", darkMode).apply()
-            applyStatusBarStyle()
-            setScreen(screen)
-        }
-    }
-
-    private fun logoTile(size: Int): FrameLayout {
-        val box = FrameLayout(this)
-        box.background = grad(intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()), dpf(size / 3))
-        val t = tv("C", size * 0.55f, Color.WHITE, true)
-        t.gravity = Gravity.CENTER
-        box.addView(t, FrameLayout.LayoutParams(MATCH, MATCH))
-        return box
-    }
-
-    private fun brandRow(size: Float): LinearLayout {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.gravity = Gravity.CENTER_VERTICAL
-        row.addView(logoTile(dp(30)), lp(dp(30), dp(30)))
-        val name = gradText(tr("CompressPro"), size, intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()))
-        row.addView(name, lpm(WRAP, WRAP, 10, 0, 0, 0))
-        return row
-    }
-
-    private fun tagline(size: Float): TextView {
-        return tv(tr("Compress images and PDFs instantly"), size, colTextSub())
-    }
-
-    private fun navItem(label: String, glyph: String, active: Boolean, onClick: () -> Unit): LinearLayout {
-        val item = LinearLayout(this)
-        item.orientation = LinearLayout.VERTICAL
-        item.gravity = Gravity.CENTER_HORIZONTAL
-        item.setPadding(dp(10), dp(8), dp(10), dp(8))
-        item.isClickable = true
-        item.setOnClickListener { onClick() }
-        val color = if (active) colAccent() else colNavInactive()
-        val icon = tv(glyph, 16f, color, true)
-        icon.gravity = Gravity.CENTER
-        item.addView(icon, lp(dp(24), dp(24)))
-        val t = tv(label, 11f, color, active)
-        t.gravity = Gravity.CENTER_HORIZONTAL
-        val tlp = lp(WRAP, WRAP)
-        tlp.topMargin = dp(4)
-        item.addView(t, tlp)
-        return item
-    }
-
-    private fun navBar(): LinearLayout {
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        bar.setBackgroundColor(colNavBg())
-        bar.setPadding(dp(10), dp(8), dp(10), dp(8))
-        val home = navItem(tr("Home"), "H", screen == "home") { setScreen("home") }
-        val settings = navItem(tr("Settings"), "S", screen == "settings") { setScreen("settings") }
-        bar.addView(home, lp(0, WRAP).also { it.weight = 1f })
-        bar.addView(settings, lp(0, WRAP).also { it.weight = 1f })
-        return bar
-    }
-
-    private fun badge(text: String): TextView {
-        val b = tv(text, 10f, Color.WHITE, true)
-        b.setPadding(dp(8), dp(3), dp(8), dp(3))
-        b.background = rr(0x66000000.toInt(), dpf(10))
-        return b
-    }
-
-    private fun badgeLp(): FrameLayout.LayoutParams {
-        val p = FrameLayout.LayoutParams(WRAP, WRAP)
-        p.gravity = Gravity.TOP or Gravity.END
-        p.topMargin = dp(14)
-        p.rightMargin = dp(14)
-        return p
-    }
-
-    private fun bigCard(
-        colors: IntArray,
-        glyph: String,
-        title: String,
-        subtitle: String,
-        desc: String,
-        accent: Int,
-        soon: Boolean
-    ): FrameLayout {
-        val card = FrameLayout(this)
-        card.background = grad(colors, dpf(22))
-        val inner = LinearLayout(this)
-        inner.orientation = LinearLayout.VERTICAL
-        inner.setPadding(dp(18), dp(18), dp(18), dp(18))
+    private fun showSettings() {
+        screen = "settings"
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.setPadding(dp(18), dp(14), dp(18), dp(24))
 
         val top = LinearLayout(this)
         top.orientation = LinearLayout.HORIZONTAL
         top.gravity = Gravity.CENTER_VERTICAL
+        val back = IconView(this, K.ARROW_L, P.text)
+        back.setOnClickListener { showHome() }
+        top.addView(back, lp(dp(32), dp(32)))
+        val title = tv(tr("Settings"), 22f, P.text, 2)
+        title.setPadding(dp(18), 0, 0, 0)
+        top.addView(title)
+        c.addView(top, lp(MATCH, WRAP))
 
-        val iconBox = FrameLayout(this)
-        iconBox.background = rr(accent, dpf(14))
-        val iconT = tv(glyph, 20f, Color.WHITE, true)
-        iconT.gravity = Gravity.CENTER
-        iconBox.addView(iconT, FrameLayout.LayoutParams(dp(44), dp(44)))
-        top.addView(iconBox, lp(dp(44), dp(44)))
+        val app = LinearLayout(this)
+        app.orientation = LinearLayout.HORIZONTAL
+        app.gravity = Gravity.CENTER_VERTICAL
+        app.background = rr(P.card, 22, P.cardEdge, 1)
+        app.setPadding(dp(16), dp(16), dp(16), dp(16))
+        app.addView(logoTile(62), lp(dp(62), dp(62)))
+        val at = LinearLayout(this)
+        at.orientation = LinearLayout.VERTICAL
+        at.setPadding(dp(14), 0, 0, 0)
+        at.addView(brandRow(18f))
+        at.addView(tagline(11f))
+        app.addView(at, lp(0, WRAP, 1f))
+        c.addView(app, lpm(MATCH, WRAP, 0, 18, 0, 0))
 
-        val titleBox = LinearLayout(this)
-        titleBox.orientation = LinearLayout.VERTICAL
-        val titleT = tv(title, 19f, Color.WHITE, true)
-        val subT = tv(subtitle, 15f, 0xDDFFFFFF.toInt())
-        titleBox.addView(titleT)
-        titleBox.addView(subT)
-        top.addView(titleBox, lpm(WRAP, WRAP, 12, 0, 0, 0))
+        val themeName = tr(if (P.dark) "Dark" else "Light")
+        val langName = if (T.hi) "हिन्दी" else "English"
+        val qNames = arrayOf(tr("Low"), tr("Medium"), tr("High"))
+        val sNames = arrayOf(tr("Internal"), tr("Downloads"))
 
-        inner.addView(top, lp(MATCH, WRAP))
-
-        val descT = tv(desc, 12f, 0xEEFFFFFF.toInt())
-        inner.addView(descT, lpm(MATCH, WRAP, 0, 14, 0, 0))
-
-        if (soon) {
-            card.addView(badge(tr("Coming Soon")), badgeLp())
-        }
-
-        card.addView(inner, FrameLayout.LayoutParams(MATCH, WRAP))
-        return card
-    }
-
-    private fun showHome() {
-        root.removeAllViews()
-        val outer = FrameLayout(this)
-        outer.setBackgroundColor(colBg())
-
-        val mainCol = LinearLayout(this)
-        mainCol.orientation = LinearLayout.VERTICAL
-
-        val frame = FrameLayout(this)
-
-        if (darkMode) {
-            val wave = WaveView(this)
-            frame.addView(wave, FrameLayout.LayoutParams(MATCH, dp(130), Gravity.BOTTOM))
-        }
-
-        val scroll = ScrollView(this)
-        scroll.isVerticalScrollBarEnabled = false
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(20), dp(16), dp(20), dp(20))
-
-        c.addView(brandRow(20f), lpm(WRAP, WRAP, 0, 0, 0, 6))
-        c.addView(tagline(11f), lpm(WRAP, WRAP, 0, 0, 0, 20))
-
-        val headline = tv(tr("Make Your Files"), 20f, colText(), true)
-        c.addView(headline, lpm(WRAP, WRAP, 0, 0, 0, 2))
-
-        val headline2 = gradText(tr("Smaller. Lighter."), 20f, intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()))
-        c.addView(headline2, lpm(WRAP, WRAP, 0, 0, 0, 10))
-
-        val descT = tv(tr("Reduce file size instantly without losing quality. Fast, simple and free."), 12f, colTextSub())
-        c.addView(descT, lpm(MATCH, WRAP, 0, 0, 0, 24))
-
-        val imageCard = bigCard(
-            intArrayOf(0xFF3D9BFF.toInt(), 0xFF3D6EFF.toInt(), 0xFF8A2BFF.toInt()),
-            "I", tr("Image"), tr("Compress / Resize"),
-            tr("Shrink photos while keeping them sharp and clear."),
-            0xFF3D6EFF.toInt(), true
-        )
-        c.addView(imageCard, lp(MATCH, WRAP))
-
-        val pdfCard = bigCard(
-            intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()),
-            "P", tr("PDF"), tr("Compress / Resize"),
-            tr("Make your PDF files smaller and fit your needs."),
-            0xFFFF3D6E.toInt(), true
-        )
-        c.addView(pdfCard, lpm(MATCH, WRAP, 0, 14, 0, 0))
-
-        scroll.addView(c, FrameLayout.LayoutParams(MATCH, WRAP))
-        frame.addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
-
-        mainCol.addView(frame, lp(MATCH, 0).also { it.weight = 1f })
-        mainCol.addView(navBar(), lp(MATCH, WRAP))
-
-        outer.addView(mainCol, FrameLayout.LayoutParams(MATCH, MATCH))
-        root.addView(outer, FrameLayout.LayoutParams(MATCH, MATCH))
-    }
-
-    private fun cardBox(): LinearLayout {
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
-        box.background = rr(colCard(), dpf(18))
-        box.setPadding(dp(4), dp(4), dp(4), dp(4))
-        return box
-    }
-
-    private fun row(title: String, value: String, last: Boolean, onClick: () -> Unit): LinearLayout {
-        val r = LinearLayout(this)
-        r.orientation = LinearLayout.VERTICAL
-
-        val inner = LinearLayout(this)
-        inner.orientation = LinearLayout.HORIZONTAL
-        inner.gravity = Gravity.CENTER_VERTICAL
-        inner.setPadding(dp(14), dp(14), dp(14), dp(14))
-        inner.isClickable = true
-        inner.setOnClickListener { onClick() }
-
-        val t = tv(title, 15f, colText())
-        val tlp = lp(0, WRAP)
-        tlp.weight = 1f
-        inner.addView(t, tlp)
-
-        if (value.isNotEmpty()) {
-            val v = tv(value, 12f, colTextSub())
-            inner.addView(v, lp(WRAP, WRAP))
-        }
-
-        r.addView(inner, lp(MATCH, WRAP))
-
-        if (!last) {
-            val div = FrameLayout(this)
-            div.setBackgroundColor(colDivider())
-            r.addView(div, lpm(MATCH, 1, 14, 0, 14, 0))
-        }
-
-        return r
-    }
-
-    private fun showSettings() {
-        root.removeAllViews()
-        val outer = FrameLayout(this)
-        outer.setBackgroundColor(colBg())
-
-        val mainCol = LinearLayout(this)
-        mainCol.orientation = LinearLayout.VERTICAL
-
-        val scroll = ScrollView(this)
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(20), dp(16), dp(20), dp(20))
-
-        c.addView(brandRow(18f), lpm(WRAP, WRAP, 0, 0, 0, 16))
-
-        val title = tv(tr("Settings"), 22f, colText(), true)
-        c.addView(title, lpm(WRAP, WRAP, 0, 0, 0, 18))
-
-        val card1 = cardBox()
-        card1.addView(row(tr("App Theme"), if (darkMode) tr("Dark") else tr("Light"), false) { showThemeDialog() })
-        card1.addView(row(tr("Language"), tr("English"), false) { })
-        card1.addView(row(tr("Output Quality"), tr("High"), false) { })
-        card1.addView(row(tr("Storage Location"), tr("Internal Storage"), false) { })
-        card1.addView(row(tr("About App"), tr("Version 1.0"), true) { })
-        c.addView(card1, lpm(MATCH, WRAP, 0, 0, 0, 16))
-
-        val card2 = cardBox()
-        card2.addView(row(tr("Privacy Policy"), "", false) { })
-        card2.addView(row(tr("Rate Us"), "", true) { })
-        c.addView(card2, lp(MATCH, WRAP))
-
-        scroll.addView(c, FrameLayout.LayoutParams(MATCH, WRAP))
-        mainCol.addView(scroll, lp(MATCH, 0).also { it.weight = 1f })
-        mainCol.addView(navBar(), lp(MATCH, WRAP))
-
-        outer.addView(mainCol, FrameLayout.LayoutParams(MATCH, MATCH))
-        root.addView(outer, FrameLayout.LayoutParams(MATCH, MATCH))
-    }
-
-    private fun showPermission() {
-        screen = "permission"
-        root.removeAllViews()
-        val bg = FrameLayout(this)
-        bg.setBackgroundColor(colBg())
-
-        val c = LinearLayout(this)
-        c.orientation = LinearLayout.VERTICAL
-        c.gravity = Gravity.CENTER
-        c.setPadding(dp(30), dp(30), dp(30), dp(30))
-
-        val box = FrameLayout(this)
-        box.background = grad(intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt()), dpf(24))
-        val icon = tv("CP", 28f, Color.WHITE, true)
-        icon.gravity = Gravity.CENTER
-        box.addView(icon, FrameLayout.LayoutParams(dp(90), dp(90)))
-        c.addView(box, lpm(WRAP, WRAP, 0, 0, 0, 24))
-
-        val title = tv(tr("Storage Permission Needed"), 20f, colText(), true)
-        title.gravity = Gravity.CENTER
-        c.addView(title, lpm(WRAP, WRAP, 0, 0, 0, 10))
-
-        val desc = tv(tr("CompressPro needs access to your files to compress images and PDFs."), 13f, colTextSub())
-        desc.gravity = Gravity.CENTER
-        c.addView(desc, lpm(MATCH, WRAP, 0, 0, 0, 28))
-
-        val btn = tv(tr("Grant Permission"), 16f, Color.WHITE, true)
-        btn.gravity = Gravity.CENTER
-        btn.background = grad(intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt()), dpf(26))
-        btn.setPadding(dp(30), dp(14), dp(30), dp(14))
-        btn.setOnClickListener {
-            if (permBlocked()) {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                intent.data = Uri.fromParts("package", packageName, null)
-                startActivity(intent)
-            } else {
-                permissionLauncher.launch(permList())
+        val list = cardBox()
+        list.addView(row(K.PALETTE, tr("App Theme"), tr("Choose your preferred theme"), themeName, false) {
+            choose(tr("App Theme"), arrayOf(tr("Dark"), tr("Light")), if (P.dark) 0 else 1) { w ->
+                Prefs.setDark(w == 0)
+                showSettings()
             }
-        }
-        c.addView(btn, lp(WRAP, WRAP))
+        })
+        list.addView(row(K.GLOBE, tr("Language"), tr("Select app language"), langName, false) {
+            choose(tr("Language"), arrayOf("English", "हिन्दी"), Prefs.lang()) { w ->
+                Prefs.setLang(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
+            choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
+                Prefs.setQuality(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
+            choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
+                Prefs.setStorage(w)
+                showSettings()
+            }
+        })
+        list.addView(row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
+            AlertDialog.Builder(this)
+                .setTitle("CompressPro  v1.0.0")
+                .setMessage(
+                    tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
+                        tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
+                )
+                .setPositiveButton(tr("Close"), null)
+                .show()
+        })
+        c.addView(list, lpm(MATCH, WRAP, 0, 16, 0, 0))
 
-        bg.addView(c, FrameLayout.LayoutParams(MATCH, MATCH))
-        root.addView(bg, FrameLayout.LayoutParams(MATCH, MATCH))
+        val list2 = cardBox()
+        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) {
+            if (PRIVACY_URL.isEmpty()) {
+                toast(tr("Privacy policy link will be added soon"))
+            } else {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
+                } catch (e: Throwable) {
+                }
+            }
+        })
+        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
+            } catch (e: Throwable) {
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
+                    )
+                } catch (e2: Throwable) {
+                    toast(tr("Could not open Play Store"))
+                }
+            }
+        })
+        c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+        val sv = ScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(c)
+
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.addView(sv, lp(MATCH, 0, 1f))
+        root.addView(navBar(1), lp(MATCH, WRAP))
+        setScreen(root, P.navBg)
     }
 }
