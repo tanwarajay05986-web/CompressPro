@@ -52,8 +52,9 @@ class MainActivity : ComponentActivity() {
     private fun lp(w: Int, h: Int, wt: Float = 0f): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(w, h, wt)
 
+    // size values above 0 are dp, MATCH / WRAP are kept as they are
     private fun lpm(w: Int, h: Int, l: Int, t: Int, r: Int, b: Int): LinearLayout.LayoutParams {
-        val p = LinearLayout.LayoutParams(w, h)
+        val p = LinearLayout.LayoutParams(if (w > 0) dp(w) else w, if (h > 0) dp(h) else h)
         p.setMargins(dp(l), dp(t), dp(r), dp(b))
         return p
     }
@@ -383,12 +384,12 @@ class MainActivity : ComponentActivity() {
         val hl = LinearLayout(this)
         hl.orientation = LinearLayout.VERTICAL
         hl.addView(tv(tr("Make Your Files"), 22f, P.text, 2))
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.addView(gradText(tr("Smaller"), 22f, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
-        row.addView(tv(" & ", 22f, P.text, 2))
-        row.addView(gradText(tr("Lighter"), 22f, 0xFF8A5BFF.toInt(), 0xFFC056FF.toInt()))
-        hl.addView(row)
+        val line2 = LinearLayout(this)
+        line2.orientation = LinearLayout.HORIZONTAL
+        line2.addView(gradText(tr("Smaller"), 22f, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
+        line2.addView(tv(" & ", 22f, P.text, 2))
+        line2.addView(gradText(tr("Lighter"), 22f, 0xFF8A5BFF.toInt(), 0xFFC056FF.toInt()))
+        hl.addView(line2)
         val d = tv(tr("Compress and resize your images and PDFs in just a few taps."), 13f, P.sub)
         d.setPadding(0, dp(10), 0, 0)
         hl.addView(d)
@@ -484,6 +485,41 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    private fun showAbout() {
+        AlertDialog.Builder(this)
+            .setTitle("CompressPro  v1.0.0")
+            .setMessage(
+                tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
+                    tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
+            )
+            .setPositiveButton(tr("Close"), null)
+            .show()
+    }
+
+    private fun openPrivacy() {
+        if (PRIVACY_URL.isEmpty()) {
+            toast(tr("Privacy policy link will be added soon"))
+            return
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
+        } catch (e: Throwable) {
+        }
+    }
+
+    private fun rateUs() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
+        } catch (e: Throwable) {
+            try {
+                val u = "https://play.google.com/store/apps/details?id=$packageName"
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)))
+            } catch (e2: Throwable) {
+                toast(tr("Could not open Play Store"))
+            }
+        }
+    }
+
     private fun showSettings() {
         screen = "settings"
         val c = LinearLayout(this)
@@ -524,4 +560,59 @@ class MainActivity : ComponentActivity() {
         val sNames = arrayOf(tr("Internal"), tr("Downloads"))
 
         val list = cardBox()
-        list.addView(row(K.PALETTE, tr("App Theme"), tr(
+        list.addView(
+            row(K.PALETTE, tr("App Theme"), tr("Choose your preferred theme"), themeName, false) {
+                choose(tr("App Theme"), arrayOf(tr("Dark"), tr("Light")), if (P.dark) 0 else 1) { w ->
+                    Prefs.setDark(w == 0)
+                    showSettings()
+                }
+            }
+        )
+        list.addView(
+            row(K.GLOBE, tr("Language"), tr("Select app language"), langName, false) {
+                choose(tr("Language"), arrayOf("English", "हिन्दी"), Prefs.lang()) { w ->
+                    Prefs.setLang(w)
+                    showSettings()
+                }
+            }
+        )
+        list.addView(
+            row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
+                choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
+                    Prefs.setQuality(w)
+                    showSettings()
+                }
+            }
+        )
+        list.addView(
+            row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
+                choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
+                    Prefs.setStorage(w)
+                    showSettings()
+                }
+            }
+        )
+        list.addView(
+            row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
+                showAbout()
+            }
+        )
+        c.addView(list, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+        // privacy and rating
+        val list2 = cardBox()
+        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) { openPrivacy() })
+        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) { rateUs() })
+        c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+        val sv = ScrollView(this)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(c)
+
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.addView(sv, lp(MATCH, 0, 1f))
+        root.addView(navBar(1), lp(MATCH, WRAP))
+        setScreen(root, P.navBg)
+    }
+}
