@@ -251,9 +251,9 @@ class MainActivity : ComponentActivity() {
     private fun tagline(sp: Float): TextView =
         tv(tr("Smaller Size") + "  \u2022  " + tr("Same Quality"), sp, if (P.dark) 0xFF9DB8E8.toInt() else P.sub)
 
-    // 🔧 FIX: "Home"/"Settings" label ko explicit WRAP width diya taki wo icon ke
-    // sahi niche center me aaye (VERTICAL LinearLayout me addView(view) bina params
-    // ke default MATCH_PARENT width de deta hai, jisse text left chala jaata tha)
+    // FIX: Home/Settings label now gets explicit WRAP_CONTENT width so it stays
+    // centered under the icon. Without this, a VERTICAL LinearLayout gives a
+    // child added without layout params a MATCH_PARENT width, pushing text left.
     private fun navBar(sel: Int): View {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
@@ -274,7 +274,7 @@ class MainActivity : ComponentActivity() {
             val t = tv(tr(if (i == 0) "Home" else "Settings"), 11f, col, 1)
             t.gravity = Gravity.CENTER_HORIZONTAL
             t.setPadding(0, dp(2), 0, dp(6))
-            item.addView(t, lp(WRAP, WRAP))   // ✅ FIX: explicit WRAP_CONTENT width
+            item.addView(t, lp(WRAP, WRAP))
             val line = View(this)
             if (on) line.background = rr(P.blue, 2)
             item.addView(line, lp(dp(66), dp(3)))
@@ -362,7 +362,8 @@ class MainActivity : ComponentActivity() {
         screen = "home"
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        // 🔧 FIX: bottom padding 24 → 70 taaki PDF card ke neeche zyada black space dikhe
+        // FIX: increased bottom padding from 24 to 70 so there is a clearly
+        // visible dark gap between the PDF card and the wave graphic below it
         c.setPadding(dp(20), dp(16), dp(20), dp(70))
 
         // top row: logo, name, crown
@@ -419,7 +420,6 @@ class MainActivity : ComponentActivity() {
                 tr("Make your PDF files smaller and fit your needs."),
                 0xFFFF3D6E.toInt(), soon
             ),
-            // 🔧 FIX: PDF card ko thoda bottom margin bhi diya (0 → 20)
             lpm(MATCH, WRAP, 0, 14, 0, 20)
         )
 
@@ -517,4 +517,6 @@ class MainActivity : ComponentActivity() {
         app.addView(logoTile(62), lp(dp(62), dp(62)))
         val at = LinearLayout(this)
         at.orientation = LinearLayout.VERTICAL
-        at.setPadding(dp(14), 0,
+        at.setPadding(dp(14), 0, 0, 0)
+        at.addView(brandRow(18f))
+        at.addVie
