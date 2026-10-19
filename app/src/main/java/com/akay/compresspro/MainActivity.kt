@@ -345,7 +345,7 @@ class MainActivity : ComponentActivity() {
         screen = "home"
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(20), dp(16), dp(20), dp(70))
+        c.setPadding(dp(20), dp(16), dp(20), dp(20))
 
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
@@ -398,11 +398,11 @@ class MainActivity : ComponentActivity() {
                 tr("Make your PDF files smaller and fit your needs."),
                 0xFFFF3D6E.toInt(), soon
             ),
-            lpm(MATCH, WRAP, 0, 14, 0, 20)
+            lpm(MATCH, WRAP, 0, 14, 0, 0)
         )
 
         val frame = FrameLayout(this)
-        frame.addView(WaveView(this), FrameLayout.LayoutParams(MATCH, dp(190), Gravity.BOTTOM))
+        frame.addView(WaveView(this), FrameLayout.LayoutParams(MATCH, dp(130), Gravity.BOTTOM))
         val sv = ScrollView(this)
         sv.isVerticalScrollBarEnabled = false
         sv.addView(c)
@@ -515,64 +515,4 @@ class MainActivity : ComponentActivity() {
                 showSettings()
             }
         })
-        list.addView(row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
-            choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
-                Prefs.setQuality(w)
-                showSettings()
-            }
-        })
-        list.addView(row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
-            choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
-                Prefs.setStorage(w)
-                showSettings()
-            }
-        })
-        list.addView(row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
-            AlertDialog.Builder(this)
-                .setTitle("CompressPro  v1.0.0")
-                .setMessage(
-                    tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
-                        tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
-                )
-                .setPositiveButton(tr("Close"), null)
-                .show()
-        })
-        c.addView(list, lpm(MATCH, WRAP, 0, 16, 0, 0))
-
-        val list2 = cardBox()
-        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) {
-            if (PRIVACY_URL.isEmpty()) {
-                toast(tr("Privacy policy link will be added soon"))
-            } else {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
-                } catch (e: Throwable) {
-                }
-            }
-        })
-        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
-            } catch (e: Throwable) {
-                try {
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
-                    )
-                } catch (e2: Throwable) {
-                    toast(tr("Could not open Play Store"))
-                }
-            }
-        })
-        c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
-
-        val sv = ScrollView(this)
-        sv.isVerticalScrollBarEnabled = false
-        sv.addView(c)
-
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.addView(sv, lp(MATCH, 0, 1f))
-        root.addView(navBar(1), lp(MATCH, WRAP))
-        setScreen(root, P.navBg)
-    }
-}
+        list.addView(row(K.SHIELD, tr("Output Quality"), tr("Set default quality f
