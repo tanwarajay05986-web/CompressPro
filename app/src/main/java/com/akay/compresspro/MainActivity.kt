@@ -2,33 +2,81 @@ package com.akay.compresspro
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.ContentValues
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowInsetsControllerCompat
+import java.io.File
+import java.io.FileOutputStream
+
+private class CircularProgressView(context: android.content.Context) : View(context) {
+    var progress: Int = 0
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    private val density = context.resources.displayMetrics.density
+    private val strokeW = 10f * density
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    init {
+        bgPaint.style = Paint.Style.STROKE
+        bgPaint.strokeWidth = strokeW
+        bgPaint.color = 0xFF1C2538.toInt()
+        fgPaint.style = Paint.Style.STROKE
+        fgPaint.strokeWidth = strokeW
+        fgPaint.strokeCap = Paint.Cap.ROUND
+        fgPaint.color = 0xFF2E8BFF.toInt()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val rect = RectF(strokeW / 2, strokeW / 2, width - strokeW / 2, height - strokeW / 2)
+        canvas.drawArc(rect, 0f, 360f, false, bgPaint)
+        val sweep = 360f * (progress / 100f)
+        canvas.drawArc(rect, -90f, sweep, false, fgPaint)
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -41,15 +89,46 @@ class MainActivity : ComponentActivity() {
     private var darkMode = false
     private lateinit var root: FrameLayout
 
+    private var selectedImageUri: Uri? = null
+    private var originalFileSize: Long = 0L
+    private var originalBitmapW: Int = 0
+    private var originalBitmapH: Int = 0
+
     private var qualityPercent = 60
     private var selectedFormat = "JPG"
     private var lockAspect = true
     private var heightPx = "720"
     private var widthPx = "1280"
-    private var selectedThumbnail = 0
+    private var dimensionPreset = "Custom"
+
+    private var compressedFile: File? = null
+    private var compressedFileSize: Long = 0L
+
+    private var progressPercent = 0
+    private var stageIndex = 0
+    private var isCancelled = false
+    private var compressionThread: Thread? = null
+
+    private var estimateValueRef: TextView? = null
+    private var estimateSavedRef: TextView? = null
+    private var estimateFillViewRef: View? = null
+
+    private var progressRingRef: CircularProgressView? = null
+    private var progressTextRef: TextView? = null
+    private var timeTextRef: TextView? = null
+    private var speedTextRef: TextView? = null
+    private var compSizeTextRef: TextView? = null
+    private val stageStatusRefs: Array<TextView?> = arrayOfNulls(3)
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted() }
+
+    private val pickImageLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) {
+                onImagePicked(uri)
+            }
+        }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
     private fun dpf(v: Int): Float = v * resources.displayMetrics.density
@@ -148,10 +227,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
-        if (screen == "settings" || screen == "compress_image") {
-            setScreen("home")
-        } else {
-            super.onBackPressed()
+        when (screen) {
+            "settings" -> setScreen("home")
+            "compress_image" -> setScreen("home")
+            "processing" -> cancelCompression()
+            "result" -> setScreen("home")
+            else -> super.onBackPressed()
         }
     }
 
@@ -170,6 +251,14 @@ class MainActivity : ComponentActivity() {
             "compress_image" -> {
                 screen = "compress_image"
                 showCompressionSettings()
+            }
+            "processing" -> {
+                screen = "processing"
+                showProcessingScreen()
+            }
+            "result" -> {
+                screen = "result"
+                showResultScreen()
             }
             else -> {
                 activeTab = "home"
@@ -276,7 +365,7 @@ class MainActivity : ComponentActivity() {
         desc: String,
         accent: Int,
         soon: Boolean,
-        onClick: () -> Unit = {}
+        onClick: () -> Unit
     ): FrameLayout {
         val card = FrameLayout(this)
         card.background = grad(colors, dpf(22))
@@ -356,7 +445,7 @@ class MainActivity : ComponentActivity() {
             "I", tr("Image"), tr("Compress / Resize"),
             tr("Shrink photos while keeping them sharp and clear."),
             0xFF3D6EFF.toInt(), false
-        ) { setScreen("compress_image") }
+        ) { pickImageLauncher.launch("image/*") }
         c.addView(imageCard, lp(MATCH, WRAP))
 
         val pdfCard = bigCard(
@@ -364,7 +453,7 @@ class MainActivity : ComponentActivity() {
             "P", tr("PDF"), tr("Compress / Resize"),
             tr("Make your PDF files smaller and fit your needs."),
             0xFFFF3D6E.toInt(), true
-        ) { }
+        ) { Toast.makeText(this, tr("PDF compression coming soon"), Toast.LENGTH_SHORT).show() }
         c.addView(pdfCard, lpm(MATCH, WRAP, 0, 14, 0, 0))
 
         scroll.addView(c, FrameLayout.LayoutParams(MATCH, WRAP))
@@ -509,37 +598,114 @@ class MainActivity : ComponentActivity() {
         return b
     }
 
-    private fun thumbnail(index: Int): FrameLayout {
-        val box = FrameLayout(this)
-        val bgColor = 0xFF1C2538.toInt()
-        if (index == selectedThumbnail) {
-            val d = GradientDrawable()
-            d.setColor(bgColor)
-            d.cornerRadius = dpf(14)
-            d.setStroke(dp(2), 0xFF2E8BFF.toInt())
-            box.background = d
+    private fun getFileSize(uri: Uri): Long {
+        var size = 0L
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    size = cursor.getLong(idx)
+                }
+            }
+        } catch (e: Exception) {
+        }
+        if (size <= 0L) {
+            try {
+                contentResolver.openInputStream(uri)?.use { stream ->
+                    size = stream.available().toLong()
+                }
+            } catch (e: Exception) {
+            }
+        }
+        return size
+    }
+
+    private fun getFileNameFromUri(uri: Uri?): String {
+        if (uri == null) return ""
+        var name = "image.jpg"
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    name = cursor.getString(idx)
+                }
+            }
+        } catch (e: Exception) {
+        }
+        return name
+    }
+
+    private fun formatSize(bytes: Long): String {
+        if (bytes <= 0L) return "0 KB"
+        val kb = bytes / 1024.0
+        val mb = kb / 1024.0
+        return if (mb >= 1.0) {
+            String.format("%.1f MB", mb)
         } else {
-            box.background = rr(bgColor, dpf(14))
+            String.format("%.0f KB", kb)
         }
-        val label = tv("IMG", 11f, 0xFF6B7689.toInt(), true)
-        label.gravity = Gravity.CENTER
-        box.addView(label, FrameLayout.LayoutParams(MATCH, MATCH))
-        if (index == selectedThumbnail) {
-            val check = tv("OK", 9f, Color.WHITE, true)
-            check.gravity = Gravity.CENTER
-            check.background = rr(0xFF2E8BFF.toInt(), dpf(20))
-            val clp = FrameLayout.LayoutParams(dp(22), dp(22))
-            clp.gravity = Gravity.BOTTOM or Gravity.END
-            clp.rightMargin = dp(6)
-            clp.bottomMargin = dp(6)
-            box.addView(check, clp)
+    }
+
+    private fun estimateCompressedSize(): Long {
+        if (originalFileSize <= 0L) return 0L
+        val w = widthPx.toIntOrNull() ?: originalBitmapW
+        val h = heightPx.toIntOrNull() ?: originalBitmapH
+        val origArea = (originalBitmapW * originalBitmapH).coerceAtLeast(1)
+        val newArea = (w * h).coerceAtLeast(1)
+        val areaRatio = newArea.toFloat() / origArea.toFloat()
+        val qualityRatio = qualityPercent / 100f
+        val formatFactor = when (selectedFormat) {
+            "PNG" -> 1.4f
+            "WEBP" -> 0.75f
+            "Original" -> 1.0f
+            else -> 0.9f
         }
-        box.isClickable = true
-        box.setOnClickListener {
-            selectedThumbnail = index
-            showCompressionSettings()
+        var estimate = originalFileSize * areaRatio * qualityRatio * formatFactor
+        if (estimate < originalFileSize * 0.03) estimate = originalFileSize * 0.03
+        if (estimate > originalFileSize.toDouble()) estimate = originalFileSize.toDouble()
+        return estimate.toLong()
+    }
+
+    private fun updateEstimateDisplay() {
+        val est = estimateCompressedSize()
+        estimateValueRef?.text = formatSize(est)
+        val pct = if (originalFileSize > 0) (100 - (est * 100 / originalFileSize)).toInt().coerceIn(1, 99) else 50
+        estimateSavedRef?.text = "-" + pct.toString() + "% " + tr("Saved")
+        val fv = estimateFillViewRef
+        if (fv != null) {
+            val lp2 = fv.layoutParams
+            lp2.width = dp((240 * pct) / 100)
+            fv.layoutParams = lp2
         }
-        return box
+    }
+
+    private fun setDimensionPercent(ratio: Double, label: String) {
+        if (originalBitmapW > 0 && originalBitmapH > 0) {
+            widthPx = (originalBitmapW * ratio).toInt().coerceAtLeast(1).toString()
+            heightPx = (originalBitmapH * ratio).toInt().coerceAtLeast(1).toString()
+        }
+        dimensionPreset = label
+    }
+
+    private fun onImagePicked(uri: Uri) {
+        selectedImageUri = uri
+        originalFileSize = getFileSize(uri)
+        val opts = BitmapFactory.Options()
+        opts.inJustDecodeBounds = true
+        try {
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        } catch (e: Exception) {
+        }
+        originalBitmapW = if (opts.outWidth > 0) opts.outWidth else 1280
+        originalBitmapH = if (opts.outHeight > 0) opts.outHeight else 720
+        widthPx = originalBitmapW.toString()
+        heightPx = originalBitmapH.toString()
+        qualityPercent = 60
+        selectedFormat = "JPG"
+        lockAspect = true
+        dimensionPreset = "Custom"
+        compressedFile = null
+        setScreen("compress_image")
     }
 
     private fun showCompressionSettings() {
@@ -577,63 +743,63 @@ class MainActivity : ComponentActivity() {
         val titleLp = lp(0, WRAP)
         titleLp.weight = 1f
         titleLp.marginStart = dp(12)
-        titleLp.marginEnd = dp(10)
         header.addView(titleBox, titleLp)
-
-        val iconTile = FrameLayout(this)
-        iconTile.background = grad(intArrayOf(0xFF3D9BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(14))
-        val iconGlyph = tv("IMG", 10f, Color.WHITE, true)
-        iconGlyph.gravity = Gravity.CENTER
-        iconTile.addView(iconGlyph, FrameLayout.LayoutParams(dp(48), dp(48)))
-        header.addView(iconTile, lp(dp(48), dp(48)))
 
         c.addView(header, lpm(MATCH, WRAP, 0, 0, 0, 18))
 
-        val thumbScroll = HorizontalScrollView(this)
-        thumbScroll.isHorizontalScrollBarEnabled = false
-        val thumbRow = LinearLayout(this)
-        thumbRow.orientation = LinearLayout.HORIZONTAL
-        for (i in 0 until 6) {
-            val t = thumbnail(i)
-            thumbRow.addView(t, lpm(dp(72), dp(72), if (i == 0) 0 else 10, 0, 0, 0))
-        }
-        thumbScroll.addView(thumbRow, FrameLayout.LayoutParams(WRAP, WRAP))
-        c.addView(thumbScroll, lpm(MATCH, WRAP, 0, 0, 0, 18))
+        val previewCard = FrameLayout(this)
+        previewCard.background = rr(0xFF131B2E.toInt(), dpf(16))
+        val previewImg = ImageView(this)
+        previewImg.scaleType = ImageView.ScaleType.CENTER_CROP
+        selectedImageUri?.let { previewImg.setImageURI(it) }
+        val pad = dp(6)
+        previewImg.setPadding(pad, pad, pad, pad)
+        previewCard.addView(previewImg, FrameLayout.LayoutParams(MATCH, dp(180)))
+        c.addView(previewCard, lpm(MATCH, dp(180), 0, 0, 0, 10))
+
+        val changeBtn = tv(tr("Change Image"), 13f, 0xFF2E8BFF.toInt(), true)
+        changeBtn.gravity = Gravity.CENTER
+        changeBtn.setPadding(dp(10), dp(10), dp(10), dp(10))
+        changeBtn.isClickable = true
+        changeBtn.setOnClickListener { pickImageLauncher.launch("image/*") }
+        c.addView(changeBtn, lpm(MATCH, WRAP, 0, 0, 0, 16))
 
         val sizeCard = sectionCard()
         val sizeTop = LinearLayout(this)
         sizeTop.orientation = LinearLayout.HORIZONTAL
         sizeTop.gravity = Gravity.CENTER_VERTICAL
         val sizeLabel = tv(tr("ESTIMATED SIZE"), 11f, 0xFF7C8699.toInt(), true)
-        val sizeLp = lp(0, WRAP)
-        sizeLp.weight = 1f
-        sizeTop.addView(sizeLabel, sizeLp)
-        val savedBadge = tv(tr("-87% Saved"), 12f, Color.WHITE, true)
+        val sizeLabelLp = lp(0, WRAP)
+        sizeLabelLp.weight = 1f
+        sizeTop.addView(sizeLabel, sizeLabelLp)
+        val savedBadge = tv("", 12f, Color.WHITE, true)
         savedBadge.setPadding(dp(10), dp(6), dp(10), dp(6))
         savedBadge.background = rr(0xFF1E7A45.toInt(), dpf(14))
+        estimateSavedRef = savedBadge
         sizeTop.addView(savedBadge, lp(WRAP, WRAP))
         sizeCard.addView(sizeTop, lpm(MATCH, WRAP, 0, 0, 0, 8))
 
         val sizeRow = LinearLayout(this)
         sizeRow.orientation = LinearLayout.HORIZONTAL
         sizeRow.gravity = Gravity.BOTTOM
-        val bigSize = tv("1.2", 26f, Color.WHITE, true)
+        val bigSize = tv("", 26f, Color.WHITE, true)
+        estimateValueRef = bigSize
         sizeRow.addView(bigSize)
-        val unit = tv(" MB", 16f, 0xFF9AA4B8.toInt(), true)
-        sizeRow.addView(unit)
         sizeCard.addView(sizeRow)
 
         val afterText = tv(tr("(After Compression)"), 11f, 0xFF7C8699.toInt())
         sizeCard.addView(afterText, lpm(WRAP, WRAP, 0, 2, 0, 10))
 
-        val track = FrameLayout(this)
-        track.background = rr(0xFF0F1A2E.toInt(), dpf(6))
-        val fill = FrameLayout(this)
-        fill.background = grad(intArrayOf(0xFF2E8BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(6))
-        track.addView(fill, FrameLayout.LayoutParams(dp(170), dp(8)))
-        sizeCard.addView(track, lpm(MATCH, dp(8), 0, 0, 0, 10))
+        val trackBg = FrameLayout(this)
+        trackBg.background = rr(0xFF0F1A2E.toInt(), dpf(6))
+        val fillView = View(this)
+        fillView.background = grad(intArrayOf(0xFF2E8BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(6))
+        val fillLp = FrameLayout.LayoutParams(dp(10), dp(8))
+        trackBg.addView(fillView, fillLp)
+        estimateFillViewRef = fillView
+        sizeCard.addView(trackBg, lpm(MATCH, dp(8), 0, 0, 0, 10))
 
-        val origRow = tv(tr("Original: 9.8 MB"), 11f, 0xFF7C8699.toInt())
+        val origRow = tv(tr("Original: ") + formatSize(originalFileSize), 11f, 0xFF7C8699.toInt())
         origRow.gravity = Gravity.END
         sizeCard.addView(origRow, lp(MATCH, WRAP))
 
@@ -652,8 +818,10 @@ class MainActivity : ComponentActivity() {
         seek.progress = qualityPercent
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
-                qualityPercent = value
-                qBadge.text = value.toString() + "%"
+                val v = if (value < 5) 5 else value
+                qualityPercent = v
+                qBadge.text = v.toString() + "%"
+                updateEstimateDisplay()
             }
 
             override fun onStartTrackingTouch(sb: SeekBar) {
@@ -686,10 +854,6 @@ class MainActivity : ComponentActivity() {
 
         val dimCard = sectionCard()
         val dHeader = sectionHeader("D", intArrayOf(0xFF1FD1C7.toInt(), 0xFF2E8BFF.toInt()), tr("Dimensions"), tr("Set your desired width and height."))
-        val dBadge = tv("80%", 12f, Color.WHITE, true)
-        dBadge.setPadding(dp(12), dp(6), dp(12), dp(6))
-        dBadge.background = rr(0xFF123A5C.toInt(), dpf(14))
-        dHeader.addView(dBadge, lp(WRAP, WRAP))
         dimCard.addView(dHeader, lpm(MATCH, WRAP, 0, 0, 0, 14))
 
         val dimRow = LinearLayout(this)
@@ -731,6 +895,56 @@ class MainActivity : ComponentActivity() {
 
         dimCard.addView(dimRow, lpm(MATCH, WRAP, 0, 0, 0, 14))
 
+        var heightWatcher: TextWatcher? = null
+        var widthWatcher: TextWatcher? = null
+
+        heightWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                heightPx = s.toString()
+                dimensionPreset = "Custom"
+                if (lockAspect && originalBitmapW > 0 && originalBitmapH > 0) {
+                    val h = heightPx.toIntOrNull()
+                    if (h != null && h > 0) {
+                        val newW = (h * originalBitmapW) / originalBitmapH
+                        widthPx = newW.toString()
+                        val wWatcher = widthWatcher
+                        if (wWatcher != null) widthInput.removeTextChangedListener(wWatcher)
+                        widthInput.setText(widthPx)
+                        widthInput.setSelection(widthInput.text.length)
+                        if (wWatcher != null) widthInput.addTextChangedListener(wWatcher)
+                    }
+                }
+                updateEstimateDisplay()
+            }
+        }
+
+        widthWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                widthPx = s.toString()
+                dimensionPreset = "Custom"
+                if (lockAspect && originalBitmapW > 0 && originalBitmapH > 0) {
+                    val w = widthPx.toIntOrNull()
+                    if (w != null && w > 0) {
+                        val newH = (w * originalBitmapH) / originalBitmapW
+                        heightPx = newH.toString()
+                        val hWatcher = heightWatcher
+                        if (hWatcher != null) heightInput.removeTextChangedListener(hWatcher)
+                        heightInput.setText(heightPx)
+                        heightInput.setSelection(heightInput.text.length)
+                        if (hWatcher != null) heightInput.addTextChangedListener(hWatcher)
+                    }
+                }
+                updateEstimateDisplay()
+            }
+        }
+
+        heightInput.addTextChangedListener(heightWatcher)
+        widthInput.addTextChangedListener(widthWatcher)
+
         val lockRow = LinearLayout(this)
         lockRow.orientation = LinearLayout.HORIZONTAL
         lockRow.gravity = Gravity.CENTER_VERTICAL
@@ -746,10 +960,10 @@ class MainActivity : ComponentActivity() {
 
         val presetRow = LinearLayout(this)
         presetRow.orientation = LinearLayout.HORIZONTAL
-        val p25 = pillButton("25%", false) { }
-        val p50 = pillButton("50%", false) { }
-        val p75 = pillButton("75%", false) { }
-        val pCustom = pillButton(tr("Custom"), true) { }
+        val p25 = pillButton("25%", dimensionPreset == "25%") { setDimensionPercent(0.25, "25%"); showCompressionSettings() }
+        val p50 = pillButton("50%", dimensionPreset == "50%") { setDimensionPercent(0.5, "50%"); showCompressionSettings() }
+        val p75 = pillButton("75%", dimensionPreset == "75%") { setDimensionPercent(0.75, "75%"); showCompressionSettings() }
+        val pCustom = pillButton(tr("Custom"), dimensionPreset == "Custom") { setDimensionPercent(1.0, "Custom"); showCompressionSettings() }
         val p25Lp = lp(0, WRAP)
         p25Lp.weight = 1f
         p25Lp.marginEnd = dp(6)
@@ -800,7 +1014,11 @@ class MainActivity : ComponentActivity() {
         cSub.gravity = Gravity.CENTER
         compressBtn.addView(cSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
         compressBtn.isClickable = true
-        compressBtn.setOnClickListener { }
+        compressBtn.setOnClickListener {
+            if (selectedImageUri != null) {
+                startCompression()
+            }
+        }
         c.addView(compressBtn, lpm(MATCH, WRAP, 0, 0, 0, 16))
 
         scroll.addView(c, FrameLayout.LayoutParams(MATCH, WRAP))
@@ -808,6 +1026,629 @@ class MainActivity : ComponentActivity() {
         mainCol.addView(navBar(), lp(MATCH, WRAP))
 
         outer.addView(mainCol, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(outer, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        updateEstimateDisplay()
+    }
+
+    private fun performCompression(uri: Uri): File? {
+        return try {
+            val opts = BitmapFactory.Options()
+            opts.inPreferredConfig = Bitmap.Config.ARGB_8888
+            val input = contentResolver.openInputStream(uri) ?: return null
+            val original = BitmapFactory.decodeStream(input, null, opts)
+            input.close()
+            if (original == null) return null
+
+            val targetW = (widthPx.toIntOrNull() ?: original.width).coerceAtLeast(1)
+            val targetH = (heightPx.toIntOrNull() ?: original.height).coerceAtLeast(1)
+
+            val scaled = if (targetW != original.width || targetH != original.height) {
+                Bitmap.createScaledBitmap(original, targetW, targetH, true)
+            } else {
+                original
+            }
+
+            val ext = when (selectedFormat) {
+                "PNG" -> "png"
+                "WEBP" -> "webp"
+                else -> "jpg"
+            }
+            val compressFormat = when (selectedFormat) {
+                "PNG" -> Bitmap.CompressFormat.PNG
+                "WEBP" -> if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
+                else -> Bitmap.CompressFormat.JPEG
+            }
+
+            val outDir = File(cacheDir, "compressed")
+            if (!outDir.exists()) outDir.mkdirs()
+            val outFile = File(outDir, "compressed_" + System.currentTimeMillis() + "." + ext)
+            val fos = FileOutputStream(outFile)
+            scaled.compress(compressFormat, qualityPercent, fos)
+            fos.flush()
+            fos.close()
+
+            if (scaled != original) {
+                original.recycle()
+            }
+            outFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun cancelCompression() {
+        isCancelled = true
+        setScreen("home")
+    }
+
+    private fun startCompression() {
+        val uri = selectedImageUri ?: return
+        isCancelled = false
+        stageIndex = 0
+        progressPercent = 0
+        setScreen("processing")
+
+        val handler = Handler(Looper.getMainLooper())
+
+        compressionThread = Thread {
+            try {
+                handler.post { stageIndex = 0; refreshProcessingUi() }
+                var p = 0
+                while (p < 30 && !isCancelled) {
+                    Thread.sleep(40)
+                    p += 2
+                    val cp = p
+                    handler.post { progressPercent = cp; refreshProcessingUi() }
+                }
+
+                handler.post { stageIndex = 1; refreshProcessingUi() }
+
+                val resultFile = performCompression(uri)
+
+                var p2 = progressPercent
+                while (p2 < 90 && !isCancelled) {
+                    Thread.sleep(35)
+                    p2 += 2
+                    val cp = p2
+                    handler.post { progressPercent = cp; refreshProcessingUi() }
+                }
+
+                handler.post { stageIndex = 2; refreshProcessingUi() }
+                Thread.sleep(300)
+
+                var p3 = progressPercent
+                while (p3 < 100 && !isCancelled) {
+                    Thread.sleep(20)
+                    p3 += 2
+                    val cp = p3
+                    handler.post { progressPercent = cp; refreshProcessingUi() }
+                }
+
+                if (!isCancelled && resultFile != null) {
+                    compressedFile = resultFile
+                    compressedFileSize = resultFile.length()
+                    handler.post {
+                        stageIndex = 3
+                        setScreen("result")
+                    }
+                } else if (!isCancelled) {
+                    handler.post {
+                        Toast.makeText(this, tr("Compression failed. Try again."), Toast.LENGTH_SHORT).show()
+                        setScreen("compress_image")
+                    }
+                }
+            } catch (e: Exception) {
+                handler.post {
+                    Toast.makeText(this, tr("Compression failed. Try again."), Toast.LENGTH_SHORT).show()
+                    setScreen("compress_image")
+                }
+            }
+        }
+        compressionThread?.start()
+    }
+
+    private fun refreshProcessingUi() {
+        progressRingRef?.progress = progressPercent
+        progressTextRef?.text = progressPercent.toString() + "%"
+        val remaining = ((100 - progressPercent) / 8).coerceAtLeast(0)
+        timeTextRef?.text = String.format("00:%02d", remaining)
+        speedTextRef?.text = String.format("%.1f MB/s", 1.5 + (progressPercent % 10) / 10.0)
+
+        val ratio = estimateCompressedSize().toDouble() / originalFileSize.toDouble().coerceAtLeast(1.0)
+        val estNow = originalFileSize - ((originalFileSize - (originalFileSize * ratio)) * (progressPercent / 100.0))
+        compSizeTextRef?.text = formatSize(estNow.toLong())
+
+        for (i in 0..2) {
+            val status = when {
+                i < stageIndex -> tr("Done")
+                i == stageIndex -> tr("In Progress")
+                else -> tr("Waiting")
+            }
+            stageStatusRefs[i]?.text = status
+            stageStatusRefs[i]?.setTextColor(
+                if (i < stageIndex) 0xFF3DDC84.toInt() else if (i == stageIndex) 0xFF2E8BFF.toInt() else 0xFF7C8699.toInt()
+            )
+        }
+    }
+
+    private fun showProcessingScreen() {
+        root.removeAllViews()
+        val outer = FrameLayout(this)
+        outer.setBackgroundColor(0xFF0B1220.toInt())
+
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.setPadding(dp(20), dp(20), dp(20), dp(20))
+
+        val header = LinearLayout(this)
+        header.orientation = LinearLayout.HORIZONTAL
+        header.gravity = Gravity.CENTER_VERTICAL
+
+        val backBtn = FrameLayout(this)
+        backBtn.background = rr(0xFF1C2538.toInt(), dpf(20))
+        val backArrow = tv("<", 18f, Color.WHITE, true)
+        backArrow.gravity = Gravity.CENTER
+        backBtn.addView(backArrow, FrameLayout.LayoutParams(dp(40), dp(40)))
+        backBtn.isClickable = true
+        backBtn.setOnClickListener { cancelCompression() }
+        header.addView(backBtn, lp(dp(40), dp(40)))
+
+        val titleBox = LinearLayout(this)
+        titleBox.orientation = LinearLayout.VERTICAL
+        val titleT = tv(tr("Compressing Image"), 18f, Color.WHITE, true)
+        val subT = tv(tr("Please wait while we compress your image..."), 11f, 0xFF9AA4B8.toInt())
+        titleBox.addView(titleT)
+        titleBox.addView(subT, lpm(MATCH, WRAP, 0, 2, 0, 0))
+        val titleLp = lp(0, WRAP)
+        titleLp.weight = 1f
+        titleLp.marginStart = dp(12)
+        header.addView(titleBox, titleLp)
+
+        val modeBadge = tv(if (qualityPercent >= 80) tr("High Quality Mode") else tr("Standard Mode"), 11f, Color.WHITE, true)
+        modeBadge.setPadding(dp(10), dp(8), dp(10), dp(8))
+        modeBadge.background = rr(0xFF3D2E7A.toInt(), dpf(14))
+        header.addView(modeBadge, lp(WRAP, WRAP))
+
+        c.addView(header, lpm(MATCH, WRAP, 0, 0, 0, 24))
+
+        val midRow = LinearLayout(this)
+        midRow.orientation = LinearLayout.HORIZONTAL
+        midRow.gravity = Gravity.CENTER_VERTICAL
+
+        val timeBox = LinearLayout(this)
+        timeBox.orientation = LinearLayout.VERTICAL
+        timeBox.background = rr(0xFF131B2E.toInt(), dpf(14))
+        timeBox.setPadding(dp(14), dp(12), dp(14), dp(12))
+        timeBox.addView(tv(tr("Estimated Time"), 11f, 0xFF7C8699.toInt()))
+        val timeVal = tv("00:12", 18f, Color.WHITE, true)
+        timeTextRef = timeVal
+        timeBox.addView(timeVal, lpm(WRAP, WRAP, 0, 4, 0, 0))
+        timeBox.addView(tv(tr("remaining"), 10f, 0xFF7C8699.toInt()))
+
+        val ringBox = FrameLayout(this)
+        val ring = CircularProgressView(this)
+        progressRingRef = ring
+        ringBox.addView(ring, FrameLayout.LayoutParams(dp(160), dp(160)))
+        val pctBox = LinearLayout(this)
+        pctBox.orientation = LinearLayout.VERTICAL
+        pctBox.gravity = Gravity.CENTER
+        val pctText = tv(progressPercent.toString() + "%", 22f, Color.WHITE, true)
+        pctText.gravity = Gravity.CENTER
+        progressTextRef = pctText
+        pctBox.addView(pctText)
+        ringBox.addView(pctBox, FrameLayout.LayoutParams(dp(160), dp(160)))
+
+        val speedBox = LinearLayout(this)
+        speedBox.orientation = LinearLayout.VERTICAL
+        speedBox.background = rr(0xFF131B2E.toInt(), dpf(14))
+        speedBox.setPadding(dp(14), dp(12), dp(14), dp(12))
+        speedBox.addView(tv(tr("Processing..."), 11f, 0xFF7C8699.toInt()))
+        val speedVal = tv("2.4 MB/s", 18f, Color.WHITE, true)
+        speedTextRef = speedVal
+        speedBox.addView(speedVal, lpm(WRAP, WRAP, 0, 4, 0, 0))
+
+        val timeLp = lp(0, WRAP)
+        timeLp.weight = 1f
+        timeLp.marginEnd = dp(8)
+        midRow.addView(timeBox, timeLp)
+        midRow.addView(ringBox, lp(dp(160), dp(160)))
+        val speedLp = lp(0, WRAP)
+        speedLp.weight = 1f
+        speedLp.marginStart = dp(8)
+        midRow.addView(speedBox, speedLp)
+
+        c.addView(midRow, lpm(MATCH, WRAP, 0, 0, 0, 24))
+
+        val fileCard = sectionCard()
+        val fileRow = LinearLayout(this)
+        fileRow.orientation = LinearLayout.HORIZONTAL
+        fileRow.gravity = Gravity.CENTER_VERTICAL
+
+        val thumbBox = FrameLayout(this)
+        thumbBox.background = rr(0xFF1C2538.toInt(), dpf(10))
+        val thumbImg = ImageView(this)
+        thumbImg.scaleType = ImageView.ScaleType.CENTER_CROP
+        selectedImageUri?.let { thumbImg.setImageURI(it) }
+        thumbBox.addView(thumbImg, FrameLayout.LayoutParams(dp(56), dp(56)))
+        fileRow.addView(thumbBox, lp(dp(56), dp(56)))
+
+        val sizesBox = LinearLayout(this)
+        sizesBox.orientation = LinearLayout.HORIZONTAL
+
+        val origBox = LinearLayout(this)
+        origBox.orientation = LinearLayout.VERTICAL
+        origBox.addView(tv(tr("Original Size"), 11f, 0xFF7C8699.toInt()))
+        origBox.addView(tv(formatSize(originalFileSize), 15f, Color.WHITE, true), lpm(WRAP, WRAP, 0, 2, 0, 0))
+        val origLp = lp(0, WRAP)
+        origLp.weight = 1f
+        sizesBox.addView(origBox, origLp)
+
+        val compBox = LinearLayout(this)
+        compBox.orientation = LinearLayout.VERTICAL
+        compBox.addView(tv(tr("Compressed Size"), 11f, 0xFF7C8699.toInt()))
+        val compVal = tv(formatSize(estimateCompressedSize()), 15f, Color.WHITE, true)
+        compSizeTextRef = compVal
+        compBox.addView(compVal, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        val compLp = lp(0, WRAP)
+        compLp.weight = 1f
+        sizesBox.addView(compBox, compLp)
+
+        val sizesLp = lp(0, WRAP)
+        sizesLp.weight = 1f
+        sizesLp.marginStart = dp(12)
+        fileRow.addView(sizesBox, sizesLp)
+        fileCard.addView(fileRow, lp(MATCH, WRAP))
+
+        val fileNameText = tv(getFileNameFromUri(selectedImageUri), 11f, 0xFF7C8699.toInt())
+        fileCard.addView(fileNameText, lpm(WRAP, WRAP, 0, 10, 0, 0))
+
+        c.addView(fileCard, lpm(MATCH, WRAP, 0, 0, 0, 16))
+
+        val stageCard = sectionCard()
+        val stageNames = arrayOf(
+            Pair(tr("Reading image"), tr("Analyzing file and preparing...")),
+            Pair(tr("Compressing"), tr("Reducing file size and optimizing quality...")),
+            Pair(tr("Saving file"), tr("Finalizing and saving to your device..."))
+        )
+        for (i in 0..2) {
+            val sRow = LinearLayout(this)
+            sRow.orientation = LinearLayout.HORIZONTAL
+            sRow.gravity = Gravity.CENTER_VERTICAL
+            sRow.setPadding(0, dp(8), 0, dp(8))
+
+            val iconCircle = FrameLayout(this)
+            iconCircle.background = rr(0xFF1C2538.toInt(), dpf(16))
+            iconCircle.addView(View(this), FrameLayout.LayoutParams(dp(32), dp(32)))
+            sRow.addView(iconCircle, lp(dp(32), dp(32)))
+
+            val textBox = LinearLayout(this)
+            textBox.orientation = LinearLayout.VERTICAL
+            textBox.addView(tv(stageNames[i].first, 14f, Color.WHITE, true))
+            textBox.addView(tv(stageNames[i].second, 11f, 0xFF7C8699.toInt()))
+            val tLp = lp(0, WRAP)
+            tLp.weight = 1f
+            tLp.marginStart = dp(10)
+            sRow.addView(textBox, tLp)
+
+            val statusT = tv(tr("Waiting"), 11f, 0xFF7C8699.toInt(), true)
+            stageStatusRefs[i] = statusT
+            sRow.addView(statusT, lp(WRAP, WRAP))
+
+            stageCard.addView(sRow, lp(MATCH, WRAP))
+        }
+        c.addView(stageCard, lpm(MATCH, WRAP, 0, 0, 0, 20))
+
+        val waitBtn = LinearLayout(this)
+        waitBtn.orientation = LinearLayout.VERTICAL
+        waitBtn.gravity = Gravity.CENTER
+        waitBtn.background = grad(intArrayOf(0xFF2E8BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(24))
+        waitBtn.setPadding(dp(16), dp(14), dp(16), dp(14))
+        val wTitle = tv(tr("Please Wait..."), 15f, Color.WHITE, true)
+        wTitle.gravity = Gravity.CENTER
+        waitBtn.addView(wTitle)
+        val wSub = tv(tr("This may take a few seconds"), 11f, 0xDDFFFFFF.toInt())
+        wSub.gravity = Gravity.CENTER
+        waitBtn.addView(wSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        c.addView(waitBtn, lpm(MATCH, WRAP, 0, 0, 0, 12))
+
+        val cancelBtn = tv(tr("Cancel"), 15f, 0xFFFF4D6D.toInt(), true)
+        cancelBtn.gravity = Gravity.CENTER
+        val cancelBorder = GradientDrawable()
+        cancelBorder.setColor(Color.TRANSPARENT)
+        cancelBorder.cornerRadius = dpf(24)
+        cancelBorder.setStroke(dp(1), 0xFFFF4D6D.toInt())
+        cancelBtn.background = cancelBorder
+        cancelBtn.setPadding(dp(16), dp(14), dp(16), dp(14))
+        cancelBtn.isClickable = true
+        cancelBtn.setOnClickListener { cancelCompression() }
+        c.addView(cancelBtn, lp(MATCH, WRAP))
+
+        outer.addView(c, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(outer, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        refreshProcessingUi()
+    }
+
+    private fun shareCompressedFile() {
+        val file = compressedFile ?: return
+        try {
+            val uri = FileProvider.getUriForFile(this, packageName + ".fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND)
+            intent.type = contentResolver.getType(uri) ?: "image/*"
+            intent.putExtra(Intent.EXTRA_STREAM, uri)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(intent, tr("Share compressed image")))
+        } catch (e: Exception) {
+            Toast.makeText(this, tr("Unable to share file"), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveCompressedFile() {
+        val file = compressedFile ?: return
+        try {
+            val values = ContentValues()
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/" + file.extension)
+            if (Build.VERSION.SDK_INT >= 29) {
+                values.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CompressPro")
+            }
+            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    file.inputStream().use { input ->
+                        input.copyTo(out)
+                    }
+                }
+                Toast.makeText(this, tr("Saved to Pictures/CompressPro"), Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, tr("Unable to save file"), Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, tr("Unable to save file"), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showResultScreen() {
+        root.removeAllViews()
+        val outer = FrameLayout(this)
+        outer.setBackgroundColor(0xFF0B1220.toInt())
+
+        val scroll = ScrollView(this)
+        val c = LinearLayout(this)
+        c.orientation = LinearLayout.VERTICAL
+        c.setPadding(dp(20), dp(20), dp(20), dp(20))
+
+        val header = LinearLayout(this)
+        header.orientation = LinearLayout.HORIZONTAL
+        header.gravity = Gravity.CENTER_VERTICAL
+
+        header.addView(logoTile(dp(36)), lp(dp(36), dp(36)))
+        val nameBox = LinearLayout(this)
+        nameBox.orientation = LinearLayout.VERTICAL
+        nameBox.addView(gradText(tr("CompressPro"), 16f, intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt())))
+        nameBox.addView(tv(tr("Smaller Size - Same Quality"), 10f, 0xFF9AA4B8.toInt()))
+        val nameLp = lp(0, WRAP)
+        nameLp.weight = 1f
+        nameLp.marginStart = dp(10)
+        header.addView(nameBox, nameLp)
+
+        val homeBtn = FrameLayout(this)
+        homeBtn.background = rr(0xFF1C2538.toInt(), dpf(12))
+        val homeIcon = tv("H", 14f, Color.WHITE, true)
+        homeIcon.gravity = Gravity.CENTER
+        homeBtn.addView(homeIcon, FrameLayout.LayoutParams(dp(40), dp(40)))
+        homeBtn.isClickable = true
+        homeBtn.setOnClickListener { setScreen("home") }
+        header.addView(homeBtn, lp(dp(40), dp(40)))
+
+        c.addView(header, lpm(MATCH, WRAP, 0, 0, 0, 20))
+
+        val checkWrap = LinearLayout(this)
+        checkWrap.orientation = LinearLayout.VERTICAL
+        checkWrap.gravity = Gravity.CENTER
+        val checkBox = FrameLayout(this)
+        val checkBg = GradientDrawable()
+        checkBg.shape = GradientDrawable.OVAL
+        checkBg.setColor(0xFF1E7A45.toInt())
+        checkBox.background = checkBg
+        val checkT = tv(tr("OK"), 20f, Color.WHITE, true)
+        checkT.gravity = Gravity.CENTER
+        checkBox.addView(checkT, FrameLayout.LayoutParams(dp(70), dp(70)))
+        checkWrap.addView(checkBox, lp(dp(70), dp(70)))
+        c.addView(checkWrap, lpm(MATCH, WRAP, 0, 0, 0, 14))
+
+        val doneTitle = tv(tr("Compression Completed!"), 20f, Color.WHITE, true)
+        doneTitle.gravity = Gravity.CENTER
+        c.addView(doneTitle, lpm(MATCH, WRAP, 0, 0, 0, 6))
+
+        val doneDesc = tv(tr("Your image has been compressed successfully. You can now save, share or compress another file."), 12f, 0xFF9AA4B8.toInt())
+        doneDesc.gravity = Gravity.CENTER
+        c.addView(doneDesc, lpm(MATCH, WRAP, 0, 0, 0, 20))
+
+        val compareRow = LinearLayout(this)
+        compareRow.orientation = LinearLayout.HORIZONTAL
+
+        val origCard = LinearLayout(this)
+        origCard.orientation = LinearLayout.VERTICAL
+        origCard.background = rr(0xFF131B2E.toInt(), dpf(14))
+        origCard.setPadding(dp(6), dp(6), dp(6), dp(6))
+        val origImgBox = FrameLayout(this)
+        val origImg = ImageView(this)
+        origImg.scaleType = ImageView.ScaleType.CENTER_CROP
+        selectedImageUri?.let { origImg.setImageURI(it) }
+        origImgBox.addView(origImg, FrameLayout.LayoutParams(MATCH, dp(120)))
+        val origTag = tv(tr("Original"), 10f, Color.WHITE, true)
+        origTag.setPadding(dp(8), dp(4), dp(8), dp(4))
+        origTag.background = rr(0x99000000.toInt(), dpf(10))
+        val origTagLp = FrameLayout.LayoutParams(WRAP, WRAP)
+        origTagLp.gravity = Gravity.TOP or Gravity.START
+        origTagLp.topMargin = dp(8)
+        origTagLp.leftMargin = dp(8)
+        origImgBox.addView(origTag, origTagLp)
+        origCard.addView(origImgBox, lp(MATCH, dp(120)))
+        origCard.addView(tv(formatSize(originalFileSize), 13f, Color.WHITE, true), lpm(WRAP, WRAP, 8, 8, 0, 0))
+        origCard.addView(tv(originalBitmapW.toString() + " x " + originalBitmapH.toString(), 10f, 0xFF7C8699.toInt()), lpm(WRAP, WRAP, 8, 2, 0, 8))
+
+        val compCard = LinearLayout(this)
+        compCard.orientation = LinearLayout.VERTICAL
+        val compBorder = GradientDrawable()
+        compBorder.setColor(0xFF131B2E.toInt())
+        compBorder.cornerRadius = dpf(14)
+        compBorder.setStroke(dp(2), 0xFF3DDC84.toInt())
+        compCard.background = compBorder
+        compCard.setPadding(dp(6), dp(6), dp(6), dp(6))
+        val compImgBox = FrameLayout(this)
+        val compImg = ImageView(this)
+        compImg.scaleType = ImageView.ScaleType.CENTER_CROP
+        val cf = compressedFile
+        if (cf != null) {
+            compImg.setImageURI(Uri.fromFile(cf))
+        }
+        compImgBox.addView(compImg, FrameLayout.LayoutParams(MATCH, dp(120)))
+        val compTag = tv(tr("Compressed"), 10f, Color.WHITE, true)
+        compTag.setPadding(dp(8), dp(4), dp(8), dp(4))
+        compTag.background = rr(0xFF1E7A45.toInt(), dpf(10))
+        val compTagLp = FrameLayout.LayoutParams(WRAP, WRAP)
+        compTagLp.gravity = Gravity.TOP or Gravity.START
+        compTagLp.topMargin = dp(8)
+        compTagLp.leftMargin = dp(8)
+        compImgBox.addView(compTag, compTagLp)
+        compCard.addView(compImgBox, lp(MATCH, dp(120)))
+
+        val compInfoRow = LinearLayout(this)
+        compInfoRow.orientation = LinearLayout.HORIZONTAL
+        compInfoRow.gravity = Gravity.CENTER_VERTICAL
+        val compSizeLp = lp(0, WRAP)
+        compSizeLp.weight = 1f
+        compInfoRow.addView(tv(formatSize(compressedFileSize), 13f, Color.WHITE, true), compSizeLp)
+        val reduction = if (originalFileSize > 0) (100 - (compressedFileSize * 100 / originalFileSize)).toInt().coerceIn(0, 99) else 0
+        val reducedBadge = tv("-" + reduction.toString() + "%", 10f, Color.WHITE, true)
+        reducedBadge.setPadding(dp(6), dp(3), dp(6), dp(3))
+        reducedBadge.background = rr(0xFF1E7A45.toInt(), dpf(10))
+        compInfoRow.addView(reducedBadge, lp(WRAP, WRAP))
+        compCard.addView(compInfoRow, lpm(MATCH, WRAP, 8, 8, 0, 0))
+        compCard.addView(tv(originalBitmapW.toString() + " x " + originalBitmapH.toString(), 10f, 0xFF7C8699.toInt()), lpm(WRAP, WRAP, 8, 2, 0, 8))
+
+        val origLp2 = lp(0, WRAP)
+        origLp2.weight = 1f
+        origLp2.marginEnd = dp(8)
+        compareRow.addView(origCard, origLp2)
+        val compLp2 = lp(0, WRAP)
+        compLp2.weight = 1f
+        compareRow.addView(compCard, compLp2)
+
+        c.addView(compareRow, lpm(MATCH, WRAP, 0, 0, 0, 16))
+
+        val statsCard = sectionCard()
+        val statsRow = LinearLayout(this)
+        statsRow.orientation = LinearLayout.HORIZONTAL
+        statsRow.gravity = Gravity.CENTER_VERTICAL
+
+        val ringBox2 = FrameLayout(this)
+        val ring2 = CircularProgressView(this)
+        ring2.progress = reduction
+        ringBox2.addView(ring2, FrameLayout.LayoutParams(dp(60), dp(60)))
+        statsRow.addView(ringBox2, lp(dp(60), dp(60)))
+
+        val statsTextBox = LinearLayout(this)
+        statsTextBox.orientation = LinearLayout.VERTICAL
+        statsTextBox.addView(tv(tr("File Size Reduced"), 11f, 0xFF7C8699.toInt()))
+        statsTextBox.addView(tv(reduction.toString() + "%", 20f, 0xFF3DDC84.toInt(), true), lpm(WRAP, WRAP, 0, 2, 0, 0))
+        statsTextBox.addView(tv(formatSize(originalFileSize) + " -> " + formatSize(compressedFileSize), 11f, 0xFF7C8699.toInt()), lpm(WRAP, WRAP, 0, 2, 0, 0))
+        val statsLp = lp(0, WRAP)
+        statsLp.weight = 1f
+        statsLp.marginStart = dp(14)
+        statsRow.addView(statsTextBox, statsLp)
+
+        val qualBox = LinearLayout(this)
+        qualBox.orientation = LinearLayout.VERTICAL
+        qualBox.gravity = Gravity.CENTER
+        val leafIcon = tv(tr("OK"), 14f, Color.WHITE, true)
+        leafIcon.gravity = Gravity.CENTER
+        leafIcon.background = rr(0xFF1E7A45.toInt(), dpf(18))
+        qualBox.addView(leafIcon, lp(dp(36), dp(36)))
+        qualBox.addView(tv(tr("Quality Preserved"), 10f, Color.WHITE, true), lpm(WRAP, WRAP, 0, 6, 0, 0))
+        statsRow.addView(qualBox, lp(WRAP, WRAP))
+
+        statsCard.addView(statsRow, lp(MATCH, WRAP))
+        c.addView(statsCard, lpm(MATCH, WRAP, 0, 0, 0, 20))
+
+        val actionRow = LinearLayout(this)
+        actionRow.orientation = LinearLayout.HORIZONTAL
+
+        val shareBtn = LinearLayout(this)
+        shareBtn.orientation = LinearLayout.VERTICAL
+        shareBtn.gravity = Gravity.CENTER
+        shareBtn.background = grad(intArrayOf(0xFF2E8BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(16))
+        shareBtn.setPadding(dp(10), dp(12), dp(10), dp(12))
+        val shareTitle = tv(tr("Share"), 13f, Color.WHITE, true)
+        shareTitle.gravity = Gravity.CENTER
+        shareBtn.addView(shareTitle)
+        val shareSub = tv(tr("Share image"), 9f, 0xDDFFFFFF.toInt())
+        shareSub.gravity = Gravity.CENTER
+        shareBtn.addView(shareSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        shareBtn.isClickable = true
+        shareBtn.setOnClickListener { shareCompressedFile() }
+        val shareLp = lp(0, WRAP)
+        shareLp.weight = 1f
+        shareLp.marginEnd = dp(8)
+        actionRow.addView(shareBtn, shareLp)
+
+        val saveBtn = LinearLayout(this)
+        saveBtn.orientation = LinearLayout.VERTICAL
+        saveBtn.gravity = Gravity.CENTER
+        saveBtn.background = rr(0xFF1C2538.toInt(), dpf(16))
+        saveBtn.setPadding(dp(10), dp(12), dp(10), dp(12))
+        val saveTitle = tv(tr("Save"), 13f, Color.WHITE, true)
+        saveTitle.gravity = Gravity.CENTER
+        saveBtn.addView(saveTitle)
+        val saveSub = tv(tr("Save to device"), 9f, 0xFF9AA4B8.toInt())
+        saveSub.gravity = Gravity.CENTER
+        saveBtn.addView(saveSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        saveBtn.isClickable = true
+        saveBtn.setOnClickListener { saveCompressedFile() }
+        val saveLp = lp(0, WRAP)
+        saveLp.weight = 1f
+        saveLp.marginEnd = dp(8)
+        actionRow.addView(saveBtn, saveLp)
+
+        val againBtn = LinearLayout(this)
+        againBtn.orientation = LinearLayout.VERTICAL
+        againBtn.gravity = Gravity.CENTER
+        againBtn.background = rr(0xFF1C2538.toInt(), dpf(16))
+        againBtn.setPadding(dp(10), dp(12), dp(10), dp(12))
+        val againTitle = tv(tr("Compress Again"), 13f, Color.WHITE, true)
+        againTitle.gravity = Gravity.CENTER
+        againBtn.addView(againTitle)
+        val againSub = tv(tr("Start a new process"), 9f, 0xFF9AA4B8.toInt())
+        againSub.gravity = Gravity.CENTER
+        againBtn.addView(againSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        againBtn.isClickable = true
+        againBtn.setOnClickListener { setScreen("compress_image") }
+        val againLp = lp(0, WRAP)
+        againLp.weight = 1f
+        actionRow.addView(againBtn, againLp)
+
+        c.addView(actionRow, lpm(MATCH, WRAP, 0, 0, 0, 14))
+
+        val backHomeBtn = LinearLayout(this)
+        backHomeBtn.orientation = LinearLayout.VERTICAL
+        backHomeBtn.gravity = Gravity.CENTER
+        backHomeBtn.background = grad(intArrayOf(0xFF2E8BFF.toInt(), 0xFF8A2BFF.toInt()), dpf(24))
+        backHomeBtn.setPadding(dp(16), dp(14), dp(16), dp(14))
+        val bhTitle = tv(tr("Back to Home"), 15f, Color.WHITE, true)
+        bhTitle.gravity = Gravity.CENTER
+        backHomeBtn.addView(bhTitle)
+        val bhSub = tv(tr("Go to main screen"), 11f, 0xDDFFFFFF.toInt())
+        bhSub.gravity = Gravity.CENTER
+        backHomeBtn.addView(bhSub, lpm(WRAP, WRAP, 0, 2, 0, 0))
+        backHomeBtn.isClickable = true
+        backHomeBtn.setOnClickListener { setScreen("home") }
+        c.addView(backHomeBtn, lp(MATCH, WRAP))
+
+        scroll.addView(c, FrameLayout.LayoutParams(MATCH, WRAP))
+        outer.addView(scroll, FrameLayout.LayoutParams(MATCH, MATCH))
         root.addView(outer, FrameLayout.LayoutParams(MATCH, MATCH))
     }
 
