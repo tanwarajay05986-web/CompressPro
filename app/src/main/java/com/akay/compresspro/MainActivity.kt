@@ -52,9 +52,8 @@ class MainActivity : ComponentActivity() {
     private fun lp(w: Int, h: Int, wt: Float = 0f): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(w, h, wt)
 
-    // size values above 0 are dp, MATCH / WRAP are kept as they are
     private fun lpm(w: Int, h: Int, l: Int, t: Int, r: Int, b: Int): LinearLayout.LayoutParams {
-        val p = LinearLayout.LayoutParams(if (w > 0) dp(w) else w, if (h > 0) dp(h) else h)
+        val p = LinearLayout.LayoutParams(w, h)
         p.setMargins(dp(l), dp(t), dp(r), dp(b))
         return p
     }
@@ -160,18 +159,18 @@ class MainActivity : ComponentActivity() {
         c.setPadding(dp(32), dp(32), dp(32), dp(32))
 
         c.addView(logoTile(96), lp(dp(96), dp(96)))
-        val t = tv(tr("Permission needed"), 24f, P.text, 2)
+        val t = tv(tr("Permission needed"), 20f, P.text, 2)
         t.gravity = Gravity.CENTER
         c.addView(t, lpm(MATCH, WRAP, 0, 26, 0, 10))
         val s = tv(
             tr("CompressPro needs access to your photos to pick images and PDFs. Without this permission the app cannot work."),
-            15f, P.sub
+            13f, P.sub
         )
         s.gravity = Gravity.CENTER
         c.addView(s, lp(MATCH, WRAP))
 
         val blocked = permBlocked()
-        val b = tv(tr(if (blocked) "Open Settings" else "Allow access"), 18f, Color.WHITE, 2)
+        val b = tv(tr(if (blocked) "Open Settings" else "Allow access"), 16f, Color.WHITE, 2)
         b.gravity = Gravity.CENTER
         b.background = grad(
             intArrayOf(0xFF12C2FF.toInt(), 0xFF3B5BFF.toInt(), 0xFF8A3DFF.toInt()),
@@ -268,8 +267,8 @@ class MainActivity : ComponentActivity() {
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER_HORIZONTAL
-            item.addView(IconView(this, if (i == 0) K.HOME else K.GEAR, col), lp(dp(28), dp(28)))
-            val t = tv(tr(if (i == 0) "Home" else "Settings"), 15f, col, 1)
+            item.addView(IconView(this, if (i == 0) K.HOME else K.GEAR, col), lp(dp(24), dp(24)))
+            val t = tv(tr(if (i == 0) "Home" else "Settings"), 11f, col, 1)
             t.setPadding(0, dp(2), 0, dp(6))
             item.addView(t)
             val line = View(this)
@@ -337,8 +336,8 @@ class MainActivity : ComponentActivity() {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(16), 0, dp(6), 0)
-        col.addView(tv(title, 22f, Color.WHITE, 2))
-        col.addView(tv(sub, 17f, Color.WHITE, 1))
+        col.addView(tv(title, 19f, Color.WHITE, 2))
+        col.addView(tv(sub, 15f, Color.WHITE, 1))
         val d = tv(desc, 12.5f, 0xDDFFFFFF.toInt())
         d.setPadding(0, dp(8), 0, 0)
         col.addView(d)
@@ -369,8 +368,8 @@ class MainActivity : ComponentActivity() {
         val ht = LinearLayout(this)
         ht.orientation = LinearLayout.VERTICAL
         ht.setPadding(dp(14), 0, dp(8), 0)
-        ht.addView(brandRow(26f))
-        ht.addView(tagline(13f))
+        ht.addView(brandRow(20f))
+        ht.addView(tagline(11f))
         head.addView(ht, lp(0, WRAP, 1f))
         val crown = IconView(this, K.CROWN, P.gold)
         crown.setOnClickListener { toast(tr("CompressPro is 100% free. No subscription!")) }
@@ -383,14 +382,14 @@ class MainActivity : ComponentActivity() {
         hero.gravity = Gravity.CENTER_VERTICAL
         val hl = LinearLayout(this)
         hl.orientation = LinearLayout.VERTICAL
-        hl.addView(tv(tr("Make Your Files"), 22f, P.text, 2))
-        val line2 = LinearLayout(this)
-        line2.orientation = LinearLayout.HORIZONTAL
-        line2.addView(gradText(tr("Smaller"), 22f, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
-        line2.addView(tv(" & ", 22f, P.text, 2))
-        line2.addView(gradText(tr("Lighter"), 22f, 0xFF8A5BFF.toInt(), 0xFFC056FF.toInt()))
-        hl.addView(line2)
-        val d = tv(tr("Compress and resize your images and PDFs in just a few taps."), 13f, P.sub)
+        hl.addView(tv(tr("Make Your Files"), 20f, P.text, 2))
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.addView(gradText(tr("Smaller"), 20f, 0xFF00C8FF.toInt(), 0xFF3B7BFF.toInt()))
+        row.addView(tv(" & ", 20f, P.text, 2))
+        row.addView(gradText(tr("Lighter"), 20f, 0xFF8A5BFF.toInt(), 0xFFC056FF.toInt()))
+        hl.addView(row)
+        val d = tv(tr("Compress and resize your images and PDFs in just a few taps."), 12f, P.sub)
         d.setPadding(0, dp(10), 0, 0)
         hl.addView(d)
         hero.addView(hl, lp(0, WRAP, 1f))
@@ -451,12 +450,12 @@ class MainActivity : ComponentActivity() {
         r.orientation = LinearLayout.HORIZONTAL
         r.gravity = Gravity.CENTER_VERTICAL
         r.setPadding(0, dp(14), 0, dp(14))
-        r.addView(IconView(this, icon, P.iconSoft), lp(dp(38), dp(38)))
+        r.addView(IconView(this, icon, P.iconSoft), lp(dp(34), dp(34)))
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(16), 0, dp(6), 0)
-        col.addView(tv(title, 17f, P.text, 1))
-        if (sub != null) col.addView(tv(sub, 13f, P.sub))
+        col.addView(tv(title, 15f, P.text, 1))
+        if (sub != null) col.addView(tv(sub, 12f, P.sub))
         r.addView(col, lp(0, WRAP, 1f))
         if (value != null) {
             val v = tv(value, 14f, P.sub)
@@ -485,41 +484,6 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun showAbout() {
-        AlertDialog.Builder(this)
-            .setTitle("CompressPro  v1.0.0")
-            .setMessage(
-                tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
-                    tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
-            )
-            .setPositiveButton(tr("Close"), null)
-            .show()
-    }
-
-    private fun openPrivacy() {
-        if (PRIVACY_URL.isEmpty()) {
-            toast(tr("Privacy policy link will be added soon"))
-            return
-        }
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
-        } catch (e: Throwable) {
-        }
-    }
-
-    private fun rateUs() {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
-        } catch (e: Throwable) {
-            try {
-                val u = "https://play.google.com/store/apps/details?id=$packageName"
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)))
-            } catch (e2: Throwable) {
-                toast(tr("Could not open Play Store"))
-            }
-        }
-    }
-
     private fun showSettings() {
         screen = "settings"
         val c = LinearLayout(this)
@@ -533,7 +497,7 @@ class MainActivity : ComponentActivity() {
         val back = IconView(this, K.ARROW_L, P.text)
         back.setOnClickListener { showHome() }
         top.addView(back, lp(dp(32), dp(32)))
-        val title = tv(tr("Settings"), 26f, P.text, 2)
+        val title = tv(tr("Settings"), 22f, P.text, 2)
         title.setPadding(dp(18), 0, 0, 0)
         top.addView(title)
         c.addView(top, lp(MATCH, WRAP))
@@ -548,8 +512,8 @@ class MainActivity : ComponentActivity() {
         val at = LinearLayout(this)
         at.orientation = LinearLayout.VERTICAL
         at.setPadding(dp(14), 0, 0, 0)
-        at.addView(brandRow(22f))
-        at.addView(tagline(13f))
+        at.addView(brandRow(18f))
+        at.addView(tagline(11f))
         app.addView(at, lp(0, WRAP, 1f))
         c.addView(app, lpm(MATCH, WRAP, 0, 18, 0, 0))
 
@@ -560,49 +524,67 @@ class MainActivity : ComponentActivity() {
         val sNames = arrayOf(tr("Internal"), tr("Downloads"))
 
         val list = cardBox()
-        list.addView(
-            row(K.PALETTE, tr("App Theme"), tr("Choose your preferred theme"), themeName, false) {
-                choose(tr("App Theme"), arrayOf(tr("Dark"), tr("Light")), if (P.dark) 0 else 1) { w ->
-                    Prefs.setDark(w == 0)
-                    showSettings()
-                }
+        list.addView(row(K.PALETTE, tr("App Theme"), tr("Choose your preferred theme"), themeName, false) {
+            choose(tr("App Theme"), arrayOf(tr("Dark"), tr("Light")), if (P.dark) 0 else 1) { w ->
+                Prefs.setDark(w == 0)
+                showSettings()
             }
-        )
-        list.addView(
-            row(K.GLOBE, tr("Language"), tr("Select app language"), langName, false) {
-                choose(tr("Language"), arrayOf("English", "हिन्दी"), Prefs.lang()) { w ->
-                    Prefs.setLang(w)
-                    showSettings()
-                }
+        })
+        list.addView(row(K.GLOBE, tr("Language"), tr("Select app language"), langName, false) {
+            choose(tr("Language"), arrayOf("English", "हिन्दी"), Prefs.lang()) { w ->
+                Prefs.setLang(w)
+                showSettings()
             }
-        )
-        list.addView(
-            row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
-                choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
-                    Prefs.setQuality(w)
-                    showSettings()
-                }
+        })
+        list.addView(row(K.SHIELD, tr("Output Quality"), tr("Set default quality for compression"), qNames[Prefs.quality()], false) {
+            choose(tr("Output Quality"), qNames, Prefs.quality()) { w ->
+                Prefs.setQuality(w)
+                showSettings()
             }
-        )
-        list.addView(
-            row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
-                choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
-                    Prefs.setStorage(w)
-                    showSettings()
-                }
+        })
+        list.addView(row(K.FOLDER, tr("Storage Location"), tr("Choose where to save files"), sNames[Prefs.storage()], false) {
+            choose(tr("Storage Location"), sNames, Prefs.storage()) { w ->
+                Prefs.setStorage(w)
+                showSettings()
             }
-        )
-        list.addView(
-            row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
-                showAbout()
-            }
-        )
+        })
+        list.addView(row(K.INFO, tr("About App"), tr("Version, developer and more"), "v1.0.0", true) {
+            AlertDialog.Builder(this)
+                .setTitle("CompressPro  v1.0.0")
+                .setMessage(
+                    tr("Smaller Size") + "  \u2022  " + tr("Same Quality") + "\n\n" +
+                        tr("Free app, no subscription.") + "\n" + tr("Made by Akay")
+                )
+                .setPositiveButton(tr("Close"), null)
+                .show()
+        })
         c.addView(list, lpm(MATCH, WRAP, 0, 16, 0, 0))
 
         // privacy and rating
         val list2 = cardBox()
-        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) { openPrivacy() })
-        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) { rateUs() })
+        list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) {
+            if (PRIVACY_URL.isEmpty()) {
+                toast(tr("Privacy policy link will be added soon"))
+            } else {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
+                } catch (e: Throwable) {
+                }
+            }
+        })
+        list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
+            } catch (e: Throwable) {
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
+                    )
+                } catch (e2: Throwable) {
+                    toast(tr("Could not open Play Store"))
+                }
+            }
+        })
         c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
 
         val sv = ScrollView(this)
