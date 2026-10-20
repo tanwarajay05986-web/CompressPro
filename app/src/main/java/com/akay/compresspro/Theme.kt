@@ -24,10 +24,15 @@ object P {
     val navBg: Int get() = if (dark) 0xFF070E20.toInt() else 0xFFFFFFFF.toInt()
     val navOff: Int get() = if (dark) 0xFF4A6090.toInt() else 0xFF8A99B8.toInt()
     val iconSoft: Int get() = if (dark) 0xFF8CCBFF.toInt() else 0xFF2F86E0.toInt()
+    val chip: Int get() = if (dark) 0xFF0F2347.toInt() else 0xFFE6ECF8.toInt()
+    val field: Int get() = if (dark) 0xFF081832.toInt() else 0xFFF3F6FC.toInt()
+    val chipSel: IntArray get() = intArrayOf(0xFF1E8BFF.toInt(), 0xFF7A3DFF.toInt())
+    val grad3: IntArray get() = intArrayOf(0xFF12C2FF.toInt(), 0xFF3B5BFF.toInt(), 0xFF8A3DFF.toInt())
     val blue = 0xFF1E90FF.toInt()
     val cyan = 0xFF00C8FF.toInt()
     val purple = 0xFFA855F7.toInt()
     val gold = 0xFFFFC21A.toInt()
+    val green = 0xFF19E39A.toInt()
 }
 
 // English text is used everywhere in the code; Hindi is looked up here
@@ -80,10 +85,51 @@ object T {
             "इमेज और PDF चुनने के लिए CompressPro को आपकी फ़ोटो का एक्सेस चाहिए। इस अनुमति के बिना ऐप काम नहीं करेगा।",
         "Allow access" to "एक्सेस दें",
         "Open Settings" to "सेटिंग्स खोलें",
-        "Coming in the next stage" to "अगले स्टेज में आएगा",
         "CompressPro is 100% free. No subscription!" to "CompressPro 100% फ़्री है। कोई सब्सक्रिप्शन नहीं!",
         "Privacy policy link will be added soon" to "प्राइवेसी पॉलिसी का लिंक जल्द जुड़ेगा",
-        "Could not open Play Store" to "Play Store नहीं खुल पाया"
+        "Could not open Play Store" to "Play Store नहीं खुल पाया",
+        "Compression Settings" to "कंप्रेशन सेटिंग्स",
+        "Adjust settings to get the best balance between quality and file size." to
+            "क्वालिटी और फ़ाइल साइज़ के बीच सबसे अच्छा संतुलन पाने के लिए सेटिंग्स बदलें।",
+        "ESTIMATED SIZE" to "अनुमानित साइज़",
+        "(After Compression)" to "(कंप्रेशन के बाद)",
+        "Saved" to "बचत",
+        "Original:" to "ओरिजिनल:",
+        "Quality" to "क्वालिटी",
+        "Adjust the compression quality." to "कंप्रेशन की क्वालिटी बदलें।",
+        "Low (30%)" to "कम (30%)",
+        "Medium (60%)" to "मध्यम (60%)",
+        "High (90%)" to "ज़्यादा (90%)",
+        "Dimensions" to "डाइमेंशन",
+        "Set your desired width and height." to "अपनी पसंद की चौड़ाई और ऊँचाई सेट करें।",
+        "Height" to "ऊँचाई",
+        "Width" to "चौड़ाई",
+        "Lock" to "लॉक",
+        "Aspect Ratio" to "एस्पेक्ट रेशियो",
+        "Custom" to "कस्टम",
+        "Format" to "फ़ॉर्मेट",
+        "Choose output format for your image." to "अपनी इमेज का आउटपुट फ़ॉर्मेट चुनें।",
+        "Original" to "ओरिजिनल",
+        "Compress Image" to "इमेज कंप्रेस करें",
+        "Compress PDF" to "PDF कंप्रेस करें",
+        "Tap to start compression" to "कंप्रेशन शुरू करने के लिए टैप करें",
+        "Loading…" to "लोड हो रहा है…",
+        "Could not open the selected files" to "चुनी हुई फ़ाइलें खुल नहीं पाईं",
+        "Compressing…" to "कंप्रेस हो रहा है…",
+        "File" to "फ़ाइल",
+        "Compression Completed!" to "कंप्रेशन पूरा हुआ!",
+        "Save" to "सेव करें",
+        "Share" to "शेयर करें",
+        "Saved to" to "सेव हुआ:",
+        "Could not save" to "सेव नहीं हो पाया",
+        "Cancelled" to "रद्द किया गया",
+        "Compression failed" to "कंप्रेशन नहीं हो पाया",
+        "Some files failed" to "कुछ फ़ाइलें नहीं बनीं",
+        "Original size" to "ओरिजिनल साइज़",
+        "Compressed size" to "कंप्रेस्ड साइज़",
+        "This file got bigger. Try a lower quality or smaller size." to
+            "फ़ाइल बड़ी हो गई। कम क्वालिटी या छोटा साइज़ आज़माएँ।",
+        "Could not share" to "शेयर नहीं हो पाया"
     )
 
     fun t(s: String): String = if (hi) (H[s] ?: s) else s
