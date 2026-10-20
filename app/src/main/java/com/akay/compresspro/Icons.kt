@@ -23,13 +23,27 @@ object K {
     const val DOC = 11
     const val STAR = 12
     const val RESIZE = 13
+    const val CHEV_L = 14
+    const val SLIDERS = 15
+    const val LOCK = 16
+    const val PENCIL = 17
+    const val CHECK = 18
+    const val REFRESH = 19
+    const val DOWNLOAD = 20
+    const val LEAF = 21
+    const val DATABASE = 22
 }
 
 // all small icons are drawn in code
-class IconView(ctx: Context, private val kind: Int, private val color: Int) : View(ctx) {
+class IconView(ctx: Context, private val kind: Int, var color: Int) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
     private val rf = RectF()
+
+    fun tint(c: Int) {
+        color = c
+        invalidate()
+    }
 
     private fun darker(c: Int): Int =
         Color.rgb((Color.red(c) * 0.55f).toInt(), (Color.green(c) * 0.55f).toInt(), (Color.blue(c) * 0.55f).toInt())
@@ -65,6 +79,15 @@ class IconView(ctx: Context, private val kind: Int, private val color: Int) : Vi
                 path.moveTo(x(0.36f), y(0.2f))
                 path.lineTo(x(0.66f), y(0.5f))
                 path.lineTo(x(0.36f), y(0.8f))
+                c.drawPath(path, p)
+            }
+            K.CHEV_L -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.1f * s
+                path.reset()
+                path.moveTo(x(0.64f), y(0.2f))
+                path.lineTo(x(0.34f), y(0.5f))
+                path.lineTo(x(0.64f), y(0.8f))
                 c.drawPath(path, p)
             }
             K.HOME -> {
@@ -238,6 +261,111 @@ class IconView(ctx: Context, private val kind: Int, private val color: Int) : Vi
                 path.lineTo(x(0.3f), y(0.7f))
                 path.lineTo(x(0.54f), y(0.7f))
                 c.drawPath(path, p)
+            }
+            K.SLIDERS -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.075f * s
+                val ys = floatArrayOf(0.24f, 0.5f, 0.76f)
+                val ks = floatArrayOf(0.62f, 0.34f, 0.68f)
+                for (i in 0 until 3) {
+                    c.drawLine(x(0.1f), y(ys[i]), x(ks[i] - 0.11f), y(ys[i]), p)
+                    c.drawLine(x(ks[i] + 0.11f), y(ys[i]), x(0.9f), y(ys[i]), p)
+                    c.drawCircle(x(ks[i]), y(ys[i]), 0.075f * s, p)
+                }
+            }
+            K.LOCK -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.08f * s
+                rf.set(x(0.2f), y(0.44f), x(0.8f), y(0.9f))
+                c.drawRoundRect(rf, 0.1f * s, 0.1f * s, p)
+                rf.set(x(0.3f), y(0.12f), x(0.7f), y(0.6f))
+                c.drawArc(rf, 180f, 180f, false, p)
+                c.drawLine(x(0.3f), y(0.36f), x(0.3f), y(0.45f), p)
+                c.drawLine(x(0.7f), y(0.36f), x(0.7f), y(0.45f), p)
+                p.style = Paint.Style.FILL
+                c.drawCircle(x(0.5f), y(0.64f), 0.05f * s, p)
+            }
+            K.PENCIL -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.075f * s
+                path.reset()
+                path.moveTo(x(0.62f), y(0.18f))
+                path.lineTo(x(0.82f), y(0.38f))
+                path.lineTo(x(0.4f), y(0.8f))
+                path.lineTo(x(0.16f), y(0.84f))
+                path.lineTo(x(0.2f), y(0.6f))
+                path.close()
+                c.drawPath(path, p)
+                c.drawLine(x(0.52f), y(0.28f), x(0.72f), y(0.48f), p)
+            }
+            K.CHECK -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.13f * s
+                path.reset()
+                path.moveTo(x(0.2f), y(0.52f))
+                path.lineTo(x(0.42f), y(0.74f))
+                path.lineTo(x(0.8f), y(0.28f))
+                c.drawPath(path, p)
+            }
+            K.REFRESH -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.09f * s
+                rf.set(x(0.18f), y(0.18f), x(0.82f), y(0.82f))
+                c.drawArc(rf, 40f, 270f, false, p)
+                val a = Math.toRadians(310.0)
+                val ex = x(0.5f) + (0.32f * s * Math.cos(a)).toFloat()
+                val ey = y(0.5f) + (0.32f * s * Math.sin(a)).toFloat()
+                val nx = Math.cos(a).toFloat()
+                val ny = Math.sin(a).toFloat()
+                val tx = -ny
+                val ty = nx
+                p.style = Paint.Style.FILL
+                path.reset()
+                path.moveTo(ex + tx * 0.16f * s, ey + ty * 0.16f * s)
+                path.lineTo(ex + nx * 0.12f * s, ey + ny * 0.12f * s)
+                path.lineTo(ex - nx * 0.12f * s, ey - ny * 0.12f * s)
+                path.close()
+                c.drawPath(path, p)
+            }
+            K.DOWNLOAD -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.09f * s
+                c.drawLine(x(0.5f), y(0.1f), x(0.5f), y(0.6f), p)
+                path.reset()
+                path.moveTo(x(0.3f), y(0.42f))
+                path.lineTo(x(0.5f), y(0.62f))
+                path.lineTo(x(0.7f), y(0.42f))
+                c.drawPath(path, p)
+                path.reset()
+                path.moveTo(x(0.16f), y(0.62f))
+                path.lineTo(x(0.16f), y(0.86f))
+                path.lineTo(x(0.84f), y(0.86f))
+                path.lineTo(x(0.84f), y(0.62f))
+                c.drawPath(path, p)
+            }
+            K.LEAF -> {
+                path.reset()
+                path.moveTo(x(0.16f), y(0.84f))
+                path.cubicTo(x(0.08f), y(0.38f), x(0.46f), y(0.1f), x(0.9f), y(0.1f))
+                path.cubicTo(x(0.92f), y(0.56f), x(0.62f), y(0.92f), x(0.16f), y(0.84f))
+                path.close()
+                c.drawPath(path, p)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.06f * s
+                p.color = darker(color)
+                c.drawLine(x(0.2f), y(0.8f), x(0.62f), y(0.38f), p)
+            }
+            K.DATABASE -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.07f * s
+                rf.set(x(0.2f), y(0.12f), x(0.8f), y(0.34f))
+                c.drawOval(rf, p)
+                c.drawLine(x(0.2f), y(0.23f), x(0.2f), y(0.71f), p)
+                c.drawLine(x(0.8f), y(0.23f), x(0.8f), y(0.71f), p)
+                rf.set(x(0.2f), y(0.36f), x(0.8f), y(0.58f))
+                c.drawArc(rf, 0f, 180f, false, p)
+                rf.set(x(0.2f), y(0.6f), x(0.8f), y(0.82f))
+                c.drawArc(rf, 0f, 180f, false, p)
             }
         }
     }
