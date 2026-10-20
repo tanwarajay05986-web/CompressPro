@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-files-path name="app_pictures" path="Pictures/" />
-    <external-files-path name="app_docs" path="Documents/" />
-    <external-path name="downloads" path="Download/CompressPro/" />
-    <cache-path name="cache" path="." />
+<paths>
+    <cache-path
+        name="out"
+        path="out/" />
 </paths>
