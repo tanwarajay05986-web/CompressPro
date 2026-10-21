@@ -1,6 +1,8 @@
 package com.akay.compresspro
 
 import android.Manifest
+import android.accounts.AccountManager
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -36,13 +38,16 @@ class MainActivity : ComponentActivity() {
     internal val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     internal var screen = "home"
 
+    // where to go after the login page ("home" or "settings")
+    internal var loginReturn = "home"
+
     private val cui = CompressUi(this)
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         Prefs.setAsked(true)
-        if (hasPerm()) showHome() else showPermission()
+        if (hasPerm()) startApp() else showPermission()
     }
 
     private val imgPicker = registerForActivityResult(
@@ -55,6 +60,20 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) loadItems(uris, true)
+    }
+
+    private val accountLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { r ->
+        val name = r.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        if (r.resultCode == Activity.RESULT_OK && !name.isNullOrEmpty()) {
+            Prefs.setEmail(name)
+            Prefs.setLoginSeen(true)
+            toast(tr("Signed in as") + " " + name)
+            leaveLogin()
+        } else {
+            toast(tr("No Google account was chosen"))
+        }
     }
 
     // ---------- small helpers ----------
@@ -137,6 +156,29 @@ class MainActivity : ComponentActivity() {
         c.isAppearanceLightStatusBars = !P.dark
         c.isAppearanceLightNavigationBars = !P.dark
         ViewCompat.requestApplyInsets(wrap)
+    }
+
+    // ---------- login ----------
+
+    // opens the phone's Google account chooser
+    @Suppress("DEPRECATION")
+    internal fun pickGoogleAccount() {
+        try {
+            val i = AccountManager.newChooseAccountIntent(
+                null, null, arrayOf("com.google"), null, null, null, null
+            )
+            accountLauncher.launch(i)
+        } catch (e: Throwable) {
+            toast(tr("Could not open account picker"))
+        }
+    }
+
+    internal fun leaveLogin() {
+        if (loginReturn == "settings") showSettings() else showHome()
+    }
+
+    private fun startApp() {
+        if (!Prefs.loginSeen()) showLogin("home") else showHome()
     }
 
     // ---------- permission ----------
@@ -222,12 +264,16 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when (screen) {
                     "settings", "compress" -> showHome()
+                    "login" -> {
+                        Prefs.setLoginSeen(true)
+                        leaveLogin()
+                    }
                     else -> finish()
                 }
             }
         })
         if (hasPerm()) {
-            showHome()
+            startApp()
         } else {
             showPermission()
             if (!Prefs.asked()) permLauncher.launch(permList())
@@ -237,7 +283,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (screen == "perm" && hasPerm()) {
-            showHome()
+            startApp()
         } else if (screen != "perm" && !hasPerm()) {
             showPermission()
         }
@@ -311,6 +357,7 @@ class MainActivity : ComponentActivity() {
         d.cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
         d.setStroke(dp(1), P.cardEdge)
         bar.background = d
+        bar.elevation = dp(6).toFloat()
         bar.setPadding(dp(12), dp(8), dp(12), dp(10))
         for (i in 0..1) {
             val on = i == sel
@@ -320,8 +367,9 @@ class MainActivity : ComponentActivity() {
             item.gravity = Gravity.CENTER_HORIZONTAL
             item.addView(IconView(this, if (i == 0) K.HOME else K.GEAR, col), lp(dp(28), dp(28)))
             val t = tv(tr(if (i == 0) "Home" else "Settings"), 11f, col, 1)
+            t.gravity = Gravity.CENTER
             t.setPadding(0, dp(2), 0, dp(6))
-            item.addView(t)
+            item.addView(t, lp(WRAP, WRAP))
             val line = View(this)
             if (on) line.background = rr(P.blue, 2)
             item.addView(line, lp(dp(66), dp(3)))
@@ -338,15 +386,16 @@ class MainActivity : ComponentActivity() {
 
     private fun imageTile(): View {
         val f = FrameLayout(this)
-        f.background = rr(0x33FFFFFF.toInt(), 22)
-        f.addView(IconView(this, K.IMAGE, Color.WHITE), FrameLayout.LayoutParams(dp(50), dp(50), Gravity.CENTER))
+        f.background = rr(if (P.dark) 0x33FFFFFF else 0x99FFFFFF.toInt(), 22)
+        val ic = if (P.dark) Color.WHITE else 0xFF3B8CFF.toInt()
+        f.addView(IconView(this, K.IMAGE, ic), FrameLayout.LayoutParams(dp(50), dp(50), Gravity.CENTER))
         f.addView(badge(0xFF2F5BFF.toInt(), 0xFFB9D4FF.toInt()), badgeLp())
         return f
     }
 
     private fun pdfTile(): View {
         val f = FrameLayout(this)
-        f.background = rr(0x33FFFFFF.toInt(), 22)
+        f.background = rr(if (P.dark) 0x33FFFFFF else 0x99FFFFFF.toInt(), 22)
         f.addView(PdfGlyph(this), FrameLayout.LayoutParams(dp(54), dp(54), Gravity.CENTER))
         f.addView(badge(0xFFE0245A.toInt(), 0xFFFFB3C6.toInt()), badgeLp())
         return f
@@ -374,12 +423,16 @@ class MainActivity : ComponentActivity() {
         colors: IntArray, tile: View, title: String, sub: String, desc: String,
         shadow: Int, onClick: () -> Unit
     ): View {
+        val dk = P.dark
+        val tc = if (dk) Color.WHITE else 0xFF0F1B3D.toInt()
+        val dc = if (dk) 0xDDFFFFFF.toInt() else 0xFF5F6F90.toInt()
+
         val card = LinearLayout(this)
         card.orientation = LinearLayout.HORIZONTAL
         card.gravity = Gravity.CENTER_VERTICAL
-        card.setPadding(dp(16), dp(18), dp(16), dp(18))
+        card.setPadding(dp(16), dp(14), dp(16), dp(14))
         card.background = grad(colors, GradientDrawable.Orientation.TL_BR, 26)
-        card.elevation = dp(8).toFloat()
+        card.elevation = dp(if (dk) 8 else 5).toFloat()
         card.outlineSpotShadowColor = shadow
         card.outlineAmbientShadowColor = shadow
         card.addView(tile, lp(dp(78), dp(78)))
@@ -387,19 +440,22 @@ class MainActivity : ComponentActivity() {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(16), 0, dp(6), 0)
-        col.addView(tv(title, 19f, Color.WHITE, 2))
-        col.addView(tv(sub, 15f, Color.WHITE, 1))
-        val d = tv(desc, 12.5f, 0xDDFFFFFF.toInt())
-        d.setPadding(0, dp(8), 0, 0)
+        col.addView(tv(title, 19f, tc, 2))
+        col.addView(tv(sub, 15f, tc, 1))
+        val d = tv(desc, 12f, dc)
+        d.setPadding(0, dp(6), 0, 0)
         col.addView(d)
         card.addView(col, lp(0, WRAP, 1f))
 
         val chev = FrameLayout(this)
         val cd = GradientDrawable()
         cd.shape = GradientDrawable.OVAL
-        cd.setColor(0x553A1AA0.toInt())
+        cd.setColor(if (dk) 0x553A1AA0 else 0x55B7A9F5)
         chev.background = cd
-        chev.addView(IconView(this, K.CHEV_R, Color.WHITE), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+        chev.addView(
+            IconView(this, K.CHEV_R, if (dk) Color.WHITE else 0xFF2D3A7A.toInt()),
+            FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+        )
         card.addView(chev, lp(dp(42), dp(42)))
         card.setOnClickListener { onClick() }
         return card
@@ -410,7 +466,7 @@ class MainActivity : ComponentActivity() {
         screen = "home"
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(20), dp(16), dp(20), dp(24))
+        c.setPadding(dp(20), dp(16), dp(20), dp(16))
 
         // top row: logo, name, crown
         val head = LinearLayout(this)
@@ -446,39 +502,43 @@ class MainActivity : ComponentActivity() {
         hl.addView(d)
         hero.addView(hl, lp(0, WRAP, 1f))
         hero.addView(HeroArt(this), lp(dp(124), dp(116)))
-        c.addView(hero, lpm(MATCH, WRAP, 0, 24, 0, 0))
+        c.addView(hero, lpm(MATCH, WRAP, 0, 20, 0, 0))
 
-        // the two big cards
+        // the two big cards (saturated in Dark, pastel in White)
+        val imgCols = if (P.dark) intArrayOf(0xFF12C2FF.toInt(), 0xFF2F6BFF.toInt(), 0xFF7A2BFF.toInt())
+        else intArrayOf(0xFFBDE7FF.toInt(), 0xFFCDD3FF.toInt(), 0xFFE2CFFF.toInt())
+        val pdfCols = if (P.dark) intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt())
+        else intArrayOf(0xFFFFD8B2.toInt(), 0xFFFFC7D4.toInt(), 0xFFEACCFF.toInt())
         c.addView(
             bigCard(
-                intArrayOf(0xFF12C2FF.toInt(), 0xFF2F6BFF.toInt(), 0xFF7A2BFF.toInt()), imageTile(),
-                tr("Image"), tr("Compress / Resize"),
+                imgCols, imageTile(), tr("Image"), tr("Compress / Resize"),
                 tr("Reduce image size and adjust dimensions without losing quality."),
-                0xFF2F6BFF.toInt()
+                if (P.dark) 0xFF2F6BFF.toInt() else 0xFF9DB7F0.toInt()
             ) { pickFiles(false) },
-            lpm(MATCH, WRAP, 0, 22, 0, 0)
+            lpm(MATCH, WRAP, 0, 20, 0, 0)
         )
         c.addView(
             bigCard(
-                intArrayOf(0xFFFF9A1F.toInt(), 0xFFFF3D6E.toInt(), 0xFF8A2BFF.toInt()), pdfTile(),
-                tr("PDF"), tr("Compress / Resize"),
+                pdfCols, pdfTile(), tr("PDF"), tr("Compress / Resize"),
                 tr("Make your PDF files smaller and fit your needs."),
-                0xFFFF3D6E.toInt()
+                if (P.dark) 0xFFFF3D6E.toInt() else 0xFFF0A3B5.toInt()
             ) { pickFiles(true) },
             lpm(MATCH, WRAP, 0, 14, 0, 0)
         )
 
-        val frame = FrameLayout(this)
-        frame.addView(WaveView(this), FrameLayout.LayoutParams(MATCH, dp(190), Gravity.BOTTOM))
         val sv = ScrollView(this)
         sv.isVerticalScrollBarEnabled = false
         sv.addView(c)
-        frame.addView(sv, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        // the waves sit under the cards (not behind them), the bar sits on top of the waves
+        val bottom = FrameLayout(this)
+        bottom.addView(WaveView(this), FrameLayout.LayoutParams(MATCH, dp(140), Gravity.BOTTOM))
+        bottom.addView(navBar(0), FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.addView(frame, lp(MATCH, 0, 1f))
-        root.addView(navBar(0), lp(MATCH, WRAP))
+        root.addView(sv, lp(MATCH, 0, 1f))
+        root.addView(bottom, lp(MATCH, WRAP))
         setScreen(root, P.navBg)
     }
 }
