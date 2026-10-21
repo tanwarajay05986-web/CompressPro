@@ -53,6 +53,12 @@ class CompressUi(private val a: MainActivity) {
     private lateinit var hField: EditText
     private lateinit var wField: EditText
     private lateinit var lockSwitch: SwitchView
+    private lateinit var specialBtn: FrameLayout
+    private lateinit var specialCheck: IconView
+    private var qCard: View? = null
+    private var qShield: View? = null
+    private var fCard: View? = null
+    private var fShield: View? = null
     private val qChips = ArrayList<Chip>()
     private val dChips = ArrayList<Chip>()
     private val fChips = ArrayList<Chip>()
@@ -104,9 +110,14 @@ class CompressUi(private val a: MainActivity) {
         o.exactH = 0
         o.fmt = 0
         o.pdf = isPdf
+        o.special = false
         qChips.clear()
         dChips.clear()
         fChips.clear()
+        qCard = null
+        qShield = null
+        fCard = null
+        fShield = null
         a.screen = "compress"
 
         val c = LinearLayout(a)
@@ -134,6 +145,7 @@ class CompressUi(private val a: MainActivity) {
         updateQualityUi()
         updateDimUi()
         updateFmtUi()
+        applySpecialUi()
         requestEstimate()
     }
 
@@ -153,11 +165,11 @@ class CompressUi(private val a: MainActivity) {
 
         val col = LinearLayout(a)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(14), 0, dp(6), 0)
-        col.addView(a.tv(tr("Compression Settings"), 20f, P.text, 2))
-        col.addView(a.tv(tr("Adjust settings to get the best balance between quality and file size."), 12f, P.sub))
+        col.setPadding(dp(12), 0, dp(6), 0)
+        col.addView(a.tv(tr("Compression Settings"), 18f, P.text, 2))
+        col.addView(a.tv(tr("Adjust settings to get the best balance between quality and file size."), 11.5f, P.sub))
         r.addView(col, lp(0, WRAP, 1f))
-        r.addView(SettingsArt(a), lp(dp(84), dp(74)))
+        r.addView(SettingsArt(a), lp(dp(72), dp(64)))
         return r
     }
 
@@ -256,12 +268,15 @@ class CompressUi(private val a: MainActivity) {
         val b = LinearLayout(a)
         b.orientation = LinearLayout.HORIZONTAL
         b.gravity = Gravity.CENTER
+        b.setPadding(dp(4), 0, dp(4), 0)
         var ic: IconView? = null
         if (icon >= 0) {
             ic = IconView(a, icon, P.sub)
-            b.addView(ic, lpm(16, 16, 0, 0, 7, 0))
+            b.addView(ic, lpm(15, 15, 0, 0, 6, 0))
         }
-        val t = a.tv(label, 14f, P.text, 1)
+        val t = a.tv(label, 13f, P.text, 1)
+        t.maxLines = 1
+        t.setSingleLine(true)
         b.addView(t)
         b.setOnClickListener { onClick() }
         return Chip(b, t, ic, checkOnSel)
@@ -287,7 +302,7 @@ class CompressUi(private val a: MainActivity) {
         return r
     }
 
-    // ----- estimated size -----
+    // ----- estimated size and the Special 200 KB button -----
 
     private fun estCard(): View {
         val card = card()
@@ -336,7 +351,58 @@ class CompressUi(private val a: MainActivity) {
 
         estBar = HBar(a)
         card.addView(estBar, lpm(MATCH, 8, 0, 12, 0, 0))
+        card.addView(specialButton(), lpm(MATCH, 46, 0, 12, 0, 0))
         return card
+    }
+
+    // free "Special 200 KB" mode (crown): the file is made about 200 KB, only dimensions can be changed
+    private fun specialButton(): View {
+        val f = FrameLayout(a)
+        specialBtn = f
+
+        val row = LinearLayout(a)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER
+        row.addView(IconView(a, K.CROWN, Color.WHITE), lp(dp(22), dp(22)))
+        val t = a.tv(tr("Special 200 KB"), 15f, Color.WHITE, 2)
+        t.setPadding(dp(8), 0, 0, 0)
+        row.addView(t)
+        specialCheck = IconView(a, K.CHECK, Color.WHITE)
+        row.addView(specialCheck, lpm(16, 16, 8, 0, 0, 0))
+        f.addView(row, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+
+        val ch = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.END or Gravity.CENTER_VERTICAL)
+        ch.rightMargin = dp(14)
+        f.addView(IconView(a, K.CHEV_R, Color.WHITE), ch)
+        f.setOnClickListener { toggleSpecial() }
+        return f
+    }
+
+    private fun toggleSpecial() {
+        o.special = !o.special
+        applySpecialUi()
+        a.toast(
+            tr(
+                if (o.special) "Special mode ON: about 200 KB file. Only dimensions can be changed."
+                else "Special mode OFF"
+            )
+        )
+        requestEstimate()
+    }
+
+    // when Special is ON, the Quality and Format cards go dim and cannot be used
+    private fun applySpecialUi() {
+        val on = o.special
+        specialCheck.visibility = if (on) View.VISIBLE else View.GONE
+        val g = a.grad(intArrayOf(0xFF1E8BFF.toInt(), 0xFF7A3DFF.toInt()), GradientDrawable.Orientation.LEFT_RIGHT, 23)
+        if (on) g.setStroke(dp(2), Color.WHITE)
+        specialBtn.background = g
+        qCard?.alpha = if (on) 0.4f else 1f
+        qShield?.visibility = if (on) View.VISIBLE else View.GONE
+        fCard?.alpha = if (on) 0.4f else 1f
+        fShield?.visibility = if (on) View.VISIBLE else View.GONE
+        updateQualityUi()
+        updateFmtUi()
     }
 
     // ----- quality -----
@@ -369,14 +435,23 @@ class CompressUi(private val a: MainActivity) {
                 requestEstimate()
             })
         }
-        card.addView(chipRow(qChips, floatArrayOf(1f, 1f, 1f)), lpm(MATCH, WRAP, 0, 8, 0, 0))
-        return card
+        card.addView(chipRow(qChips, floatArrayOf(1f, 1.2f, 1f)), lpm(MATCH, WRAP, 0, 8, 0, 0))
+
+        val wrap = FrameLayout(a)
+        wrap.addView(card, FrameLayout.LayoutParams(MATCH, WRAP))
+        val shield = View(a)
+        shield.isClickable = true
+        shield.visibility = View.GONE
+        wrap.addView(shield, FrameLayout.LayoutParams(MATCH, MATCH))
+        qCard = card
+        qShield = shield
+        return wrap
     }
 
     private fun updateQualityUi() {
-        qPill.text = o.quality.toString() + "%"
+        qPill.text = if (o.special) tr("Auto") else o.quality.toString() + "%"
         qSeek.value = o.quality
-        for (i in 0..2) setSel(qChips[i], o.quality == qVals[i])
+        for (i in 0..2) setSel(qChips[i], !o.special && o.quality == qVals[i])
     }
 
     // ----- dimensions -----
@@ -387,12 +462,12 @@ class CompressUi(private val a: MainActivity) {
         val e = EditText(a)
         e.background = null
         e.setTextColor(P.text)
-        e.textSize = 17f
+        e.textSize = 15f
         e.inputType = InputType.TYPE_CLASS_NUMBER
         e.imeOptions = EditorInfo.IME_ACTION_DONE
         e.setSingleLine(true)
         e.gravity = Gravity.CENTER_VERTICAL
-        e.setPadding(dp(14), 0, dp(34), 0)
+        e.setPadding(dp(10), 0, dp(26), 0)
         e.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, af: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
@@ -410,9 +485,9 @@ class CompressUi(private val a: MainActivity) {
         }
         e.setOnFocusChangeListener { _, has -> if (!has) syncFields() }
         f.addView(e, FrameLayout.LayoutParams(MATCH, MATCH))
-        val px = a.tv("px", 13f, P.sub)
+        val px = a.tv("px", 11f, P.sub)
         val pl = FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER_VERTICAL or Gravity.END)
-        pl.rightMargin = dp(12)
+        pl.rightMargin = dp(8)
         f.addView(px, pl)
         return Pair(f, e)
     }
@@ -439,7 +514,7 @@ class CompressUi(private val a: MainActivity) {
         row.addView(colA, lp(0, WRAP, 1f))
 
         val x = a.tv("\u00D7", 18f, P.blue, 2)
-        x.setPadding(dp(8), dp(24), dp(8), 0)
+        x.setPadding(dp(6), dp(24), dp(6), 0)
         row.addView(x)
 
         val colB = LinearLayout(a)
@@ -450,6 +525,7 @@ class CompressUi(private val a: MainActivity) {
         colB.addView(fw.first, lpm(MATCH, 46, 0, 4, 0, 0))
         row.addView(colB, lp(0, WRAP, 1f))
 
+        // lock aspect ratio
         val colC = LinearLayout(a)
         colC.orientation = LinearLayout.VERTICAL
         val lr = LinearLayout(a)
@@ -459,8 +535,8 @@ class CompressUi(private val a: MainActivity) {
         val lt = LinearLayout(a)
         lt.orientation = LinearLayout.VERTICAL
         lt.setPadding(dp(6), 0, 0, 0)
-        lt.addView(a.tv(tr("Lock"), 12f, P.sub))
-        lt.addView(a.tv(tr("Aspect Ratio"), 12f, P.sub))
+        lt.addView(a.tv(tr("Lock"), 11f, P.sub))
+        lt.addView(a.tv(tr("Aspect Ratio"), 11f, P.sub))
         lr.addView(lt)
         colC.addView(lr)
         lockSwitch = SwitchView(a)
@@ -484,10 +560,10 @@ class CompressUi(private val a: MainActivity) {
             updateDimUi()
             requestEstimate()
         }
-        val sl = lpm(46, 26, 0, 6, 0, 0)
+        val sl = lpm(44, 24, 0, 6, 0, 0)
         sl.gravity = Gravity.END
         colC.addView(lockSwitch, sl)
-        row.addView(colC, lpm(dp(92), WRAP, 10, 0, 0, 0))
+        row.addView(colC, lpm(88, WRAP, 8, 0, 0, 0))
         card.addView(row, lpm(MATCH, WRAP, 0, 10, 0, 0))
 
         for (i in 0..2) {
@@ -505,7 +581,7 @@ class CompressUi(private val a: MainActivity) {
             wField.setSelection(wField.text.length)
             showKeyboard(wField)
         })
-        card.addView(chipRow(dChips, floatArrayOf(1f, 1f, 1f, 1.3f)), lpm(MATCH, WRAP, 0, 10, 0, 0))
+        card.addView(chipRow(dChips, floatArrayOf(1f, 1f, 1f, 1.4f)), lpm(MATCH, WRAP, 0, 10, 0, 0))
         return card
     }
 
@@ -576,13 +652,22 @@ class CompressUi(private val a: MainActivity) {
                 requestEstimate()
             })
         }
-        card.addView(chipRow(fChips, floatArrayOf(1.1f, 1f, 1f, 1.25f)), lpm(MATCH, WRAP, 0, 12, 0, 0))
-        return card
+        card.addView(chipRow(fChips, floatArrayOf(1.1f, 1f, 1f, 1.3f)), lpm(MATCH, WRAP, 0, 12, 0, 0))
+
+        val wrap = FrameLayout(a)
+        wrap.addView(card, FrameLayout.LayoutParams(MATCH, WRAP))
+        val shield = View(a)
+        shield.isClickable = true
+        shield.visibility = View.GONE
+        wrap.addView(shield, FrameLayout.LayoutParams(MATCH, MATCH))
+        fCard = card
+        fShield = shield
+        return wrap
     }
 
     private fun updateFmtUi() {
         if (pdf) return
-        for (i in 0..3) setSel(fChips[i], o.fmt == i)
+        for (i in 0..3) setSel(fChips[i], if (o.special) i == 0 else o.fmt == i)
     }
 
     // ----- compress button -----
