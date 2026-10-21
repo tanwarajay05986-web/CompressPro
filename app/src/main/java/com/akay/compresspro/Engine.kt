@@ -24,6 +24,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
+// the "Special" mode makes every file about this big
+const val SPECIAL_BYTES = 200 * 1024
+
 // settings chosen on the Compression Settings screen
 class Opts {
     var quality = 60
@@ -33,6 +36,7 @@ class Opts {
     var exactH = 0
     var fmt = 0
     var pdf = false
+    var special = false
 
     fun copy(): Opts {
         val n = Opts()
@@ -43,6 +47,7 @@ class Opts {
         n.exactH = exactH
         n.fmt = fmt
         n.pdf = pdf
+        n.special = special
         return n
     }
 }
@@ -208,6 +213,15 @@ object Engine {
         else -> "jpg"
     }
 
+    private fun origExt(item: Item): String {
+        val e = item.name.substringAfterLast('.', "").lowercase(Locale.US)
+        if (e.isNotEmpty() && e.length <= 5) return e
+        if (item.pdf) return "pdf"
+        if (item.mime.contains("png")) return "png"
+        if (item.mime.contains("webp")) return "webp"
+        return "jpg"
+    }
+
     fun mimeOf(f: File): String = when (f.extension.lowercase(Locale.US)) {
         "png" -> "image/png"
         "webp" -> "image/webp"
@@ -233,23 +247,84 @@ object Engine {
         return bos.size()
     }
 
-    // quick guess of the result size: the small preview is compressed and scaled up
-    fun estimate(item: Item, o: Opts): Long {
+    private fun pdfBytes(item: Item, s: Bitmap, scale: Int, q: Int): Long {
+        val tw = item.w * scale / 100.0
+        val th = item.h * scale / 100.0
+        val per = encodedSize(s, Bitmap.CompressFormat.JPEG, q) * (tw * th) /
+            (s.width.toDouble() * s.height.toDouble()) * 0.8
+        return maxOf(2000L, (per * item.pages + 1500.0).toLong())
+    }
+
+    private fun estimateWith(item: Item, o: Opts, quality: Int, fmt: Int): Long {
         val s = item.sample ?: return item.size
+        if (item.pdf) return pdfBytes(item, s, o.scale, quality)
         val d = outDims(item, o)
         val target = d[0].toDouble() * d[1].toDouble()
         val samplePx = s.width.toDouble() * s.height.toDouble()
-        if (item.pdf) {
-            val per = encodedSize(s, Bitmap.CompressFormat.JPEG, o.quality) * target / samplePx * 0.8
-            return maxOf(2000L, (per * item.pages + 1500.0).toLong())
-        }
-        val f = cf(o.fmt, item.mime)
-        var bytes = encodedSize(s, f, o.quality) * target / samplePx
+        val f = cf(fmt, item.mime)
+        var bytes = encodedSize(s, f, quality) * target / samplePx
         if (f != Bitmap.CompressFormat.PNG) bytes *= 0.8
         return maxOf(1500L, bytes.toLong())
     }
 
+    // quick guess of the result size. It never says more than the original size.
+    fun estimate(item: Item, o: Opts): Long {
+        var r = estimateWith(item, o, if (o.special) 90 else o.quality, if (o.special) 0 else o.fmt)
+        if (o.special) r = minOf(r, SPECIAL_BYTES.toLong())
+        if (item.size > 0) r = minOf(r, item.size)
+        return maxOf(1000L, r)
+    }
+
     // ---------- compress an image ----------
+
+    private fun jpegBytes(b: Bitmap, q: Int): ByteArray {
+        val bos = ByteArrayOutputStream()
+        b.compress(Bitmap.CompressFormat.JPEG, q, bos)
+        return bos.toByteArray()
+    }
+
+    // finds the best JPEG quality that keeps the file under `target` bytes. If even the lowest
+    // quality is too big, the picture is made a little smaller and tried again.
+    private fun fitJpeg(b0: Bitmap, target: Int): ByteArray {
+        var cur = b0
+        var owned: Bitmap? = null
+        var result: ByteArray? = null
+        var tries = 0
+        while (tries < 8) {
+            tries++
+            val low = jpegBytes(cur, 8)
+            if (low.size > target) {
+                val k = Math.sqrt(target.toDouble() / low.size) * 0.92
+                val nw = maxOf(8, Math.round(cur.width * k).toInt())
+                val nh = maxOf(8, Math.round(cur.height * k).toInt())
+                val s = Bitmap.createScaledBitmap(cur, nw, nh, true)
+                val old = owned
+                if (old != null) old.recycle()
+                owned = s
+                cur = s
+                result = low
+                continue
+            }
+            var lo = 8
+            var hi = 95
+            var best = low
+            while (lo < hi) {
+                val mid = (lo + hi + 1) / 2
+                val bt = jpegBytes(cur, mid)
+                if (bt.size <= target) {
+                    lo = mid
+                    best = bt
+                } else {
+                    hi = mid - 1
+                }
+            }
+            result = best
+            break
+        }
+        val last = owned
+        if (last != null) last.recycle()
+        return result ?: jpegBytes(b0, 8)
+    }
 
     fun compressImage(
         ctx: Context, item: Item, o: Opts, dir: File, idx: Int,
@@ -282,8 +357,8 @@ object Engine {
             bmp = sc
         }
         prog(0.6f)
-        val f = cf(o.fmt, item.mime)
-        if (f == Bitmap.CompressFormat.JPEG && bmp.hasAlpha()) {
+        val useJpeg = o.special || cf(o.fmt, item.mime) == Bitmap.CompressFormat.JPEG
+        if (useJpeg && bmp.hasAlpha()) {
             val flat = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
             val cv = Canvas(flat)
             cv.drawColor(Color.WHITE)
@@ -296,24 +371,45 @@ object Engine {
             return null
         }
         val base = item.name.substringBeforeLast('.', item.name)
-        val e = ext(o.fmt, item.mime)
+        val e = if (o.special) "jpg" else ext(o.fmt, item.mime)
         var out = File(dir, base + "_compressed." + e)
         if (out.exists()) out = File(dir, base + "_compressed_" + idx + "." + e)
-        BufferedOutputStream(FileOutputStream(out)).use { bmp.compress(f, o.quality, it) }
+        if (o.special) {
+            out.writeBytes(fitJpeg(bmp, SPECIAL_BYTES))
+        } else {
+            val f = cf(o.fmt, item.mime)
+            BufferedOutputStream(FileOutputStream(out)).use { bmp.compress(f, o.quality, it) }
+        }
         bmp.recycle()
+        prog(0.95f)
+
+        // the result must never be bigger than the original: then the original file is given back
+        if (item.size > 0 && out.length() >= item.size) {
+            val oe = origExt(item)
+            var keep = File(dir, base + "_compressed." + oe)
+            if (keep.exists() && keep.absolutePath != out.absolutePath) {
+                keep = File(dir, base + "_compressed_" + idx + "." + oe)
+            }
+            ctx.contentResolver.openInputStream(item.uri)?.use { i ->
+                FileOutputStream(keep).use { w -> i.copyTo(w) }
+            }
+            if (keep.absolutePath != out.absolutePath) out.delete()
+            if (keep.exists() && keep.length() > 0) {
+                prog(1f)
+                return keep
+            }
+        }
         prog(1f)
         return out
     }
 
     // ---------- compress a PDF (every page is drawn again as a JPEG) ----------
 
-    fun compressPdf(
-        ctx: Context, item: Item, o: Opts, dir: File, idx: Int,
+    // writes one PDF. Returns false when it was cancelled.
+    private fun writePdf(
+        item: Item, scale: Int, quality: Int, out: File,
         cancelled: () -> Boolean, prog: (Float) -> Unit
-    ): File? {
-        val base = item.name.substringBeforeLast('.', item.name)
-        var out = File(dir, base + "_compressed.pdf")
-        if (out.exists()) out = File(dir, base + "_compressed_" + idx + ".pdf")
+    ): Boolean {
         val r = PdfRenderer(ParcelFileDescriptor.open(File(item.path), ParcelFileDescriptor.MODE_READ_ONLY))
         val os = BufferedOutputStream(FileOutputStream(out))
         try {
@@ -336,15 +432,12 @@ object Engine {
             val kids = (0 until n).joinToString(" ") { "${3 + 3 * it} 0 R" }
             w("2 0 obj\n<< /Type /Pages /Kids [$kids] /Count $n >>\nendobj\n")
             for (i in 0 until n) {
-                if (cancelled()) {
-                    out.delete()
-                    return null
-                }
+                if (cancelled()) return false
                 val pg = r.openPage(i)
                 val pw = pg.width.toFloat()
                 val ph = pg.height.toFloat()
-                var bw = maxOf(8, Math.round(pw * 150f / 72f * o.scale / 100f))
-                var bh = maxOf(8, Math.round(ph * 150f / 72f * o.scale / 100f))
+                var bw = maxOf(8, Math.round(pw * 150f / 72f * scale / 100f))
+                var bh = maxOf(8, Math.round(ph * 150f / 72f * scale / 100f))
                 val big = maxOf(bw, bh)
                 if (big > 3200) {
                     val k = 3200f / big
@@ -355,10 +448,8 @@ object Engine {
                 bmp.eraseColor(Color.WHITE)
                 pg.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
                 pg.close()
-                val bos = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, o.quality, bos)
+                val jpg = jpegBytes(bmp, quality)
                 bmp.recycle()
-                val jpg = bos.toByteArray()
                 val po = 3 + 3 * i
                 offsets.add(pos)
                 w("$po 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pw $ph] /Resources << /XObject << /Im0 ${po + 2} 0 R >> >> /Contents ${po + 1} 0 R >>\nendobj\n")
@@ -377,7 +468,7 @@ object Engine {
             for (off in offsets) w(String.format(Locale.US, "%010d 00000 n \n", off))
             w("trailer\n<< /Size ${offsets.size + 1} /Root 1 0 R >>\nstartxref\n$xrefPos\n%%EOF\n")
             os.flush()
-            return out
+            return true
         } finally {
             try {
                 os.close()
@@ -385,6 +476,61 @@ object Engine {
             }
             r.close()
         }
+    }
+
+    // Special mode: picks a page size and quality that should give about 200 KB
+    private fun pickPdf(item: Item, startScale: Int): IntArray {
+        val s = item.sample ?: return intArrayOf(startScale, 30)
+        val qs = intArrayOf(80, 65, 50, 38, 28, 20, 14)
+        var sc = startScale
+        var guard = 0
+        while (guard < 14) {
+            guard++
+            for (q in qs) {
+                if (pdfBytes(item, s, sc, q) <= SPECIAL_BYTES * 0.92) return intArrayOf(sc, q)
+            }
+            sc = maxOf(8, (sc * 0.82).toInt())
+            if (sc <= 8) break
+        }
+        return intArrayOf(sc, 14)
+    }
+
+    fun compressPdf(
+        ctx: Context, item: Item, o: Opts, dir: File, idx: Int,
+        cancelled: () -> Boolean, prog: (Float) -> Unit
+    ): File? {
+        val base = item.name.substringBeforeLast('.', item.name)
+        var out = File(dir, base + "_compressed.pdf")
+        if (out.exists()) out = File(dir, base + "_compressed_" + idx + ".pdf")
+        var scale = o.scale
+        var q = o.quality
+        if (o.special) {
+            val pick = pickPdf(item, o.scale)
+            scale = pick[0]
+            q = pick[1]
+        }
+        if (!writePdf(item, scale, q, out, cancelled, prog)) {
+            out.delete()
+            return null
+        }
+        if (o.special) {
+            var tries = 0
+            while (out.length() > SPECIAL_BYTES * 1.04 && tries < 3 && !cancelled()) {
+                tries++
+                val k = Math.sqrt(SPECIAL_BYTES.toDouble() / out.length()) * 0.93
+                scale = maxOf(8, (scale * k).toInt())
+                q = maxOf(15, q - 5)
+                if (!writePdf(item, scale, q, out, cancelled, prog)) {
+                    out.delete()
+                    return null
+                }
+            }
+        }
+        // the result must never be bigger than the original: then the original file is given back
+        if (item.size > 0 && out.length() >= item.size) {
+            File(item.path).copyTo(out, true)
+        }
+        return out
     }
 
     // ---------- save and share ----------
