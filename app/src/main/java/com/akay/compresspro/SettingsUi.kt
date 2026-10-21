@@ -2,9 +2,13 @@ package com.akay.compresspro
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 
@@ -28,7 +32,17 @@ private fun MainActivity.row(
     r.orientation = LinearLayout.HORIZONTAL
     r.gravity = Gravity.CENTER_VERTICAL
     r.setPadding(0, dp(14), 0, dp(14))
-    r.addView(IconView(this, icon, P.iconSoft), lp(dp(38), dp(38)))
+
+    // in the white theme every icon sits in a small white tile
+    val tile = FrameLayout(this)
+    if (!P.dark) {
+        tile.background = rr(P.tile, 12, P.cardEdge, 1)
+        tile.elevation = dp(2).toFloat()
+    }
+    val isz = if (P.dark) 34 else 24
+    tile.addView(IconView(this, icon, P.iconSoft), FrameLayout.LayoutParams(dp(isz), dp(isz), Gravity.CENTER))
+    r.addView(tile, lp(dp(40), dp(40)))
+
     val col = LinearLayout(this)
     col.orientation = LinearLayout.VERTICAL
     col.setPadding(dp(16), 0, dp(6), 0)
@@ -46,7 +60,7 @@ private fun MainActivity.row(
     if (!last) {
         val dv = View(this)
         dv.setBackgroundColor(P.divider)
-        box.addView(dv, lpm(MATCH, 1, 54, 0, 0, 0))
+        box.addView(dv, lpm(MATCH, 1, 56, 0, 0, 0))
     }
     return box
 }
@@ -97,6 +111,76 @@ private fun MainActivity.rateUs() {
     }
 }
 
+// shows the chosen Google account
+private fun MainActivity.accountCard(email: String): View {
+    val r = LinearLayout(this)
+    r.orientation = LinearLayout.HORIZONTAL
+    r.gravity = Gravity.CENTER_VERTICAL
+    r.background = rr(P.card, 22, P.cardEdge, 1)
+    r.setPadding(dp(14), dp(14), dp(14), dp(14))
+
+    val av = FrameLayout(this)
+    val bd = GradientDrawable(GradientDrawable.Orientation.TL_BR, P.grad3)
+    bd.shape = GradientDrawable.OVAL
+    av.background = bd
+    val ini = tv(email.take(1).uppercase(), 20f, Color.WHITE, 2)
+    ini.gravity = Gravity.CENTER
+    av.addView(ini, FrameLayout.LayoutParams(MATCH, MATCH))
+    r.addView(av, lp(dp(46), dp(46)))
+
+    val col = LinearLayout(this)
+    col.orientation = LinearLayout.VERTICAL
+    col.setPadding(dp(14), 0, 0, 0)
+    col.addView(tv(tr("Signed in as"), 12f, P.sub))
+    val em = tv(email, 15f, P.text, 1)
+    em.maxLines = 1
+    em.ellipsize = TextUtils.TruncateAt.END
+    col.addView(em)
+    r.addView(col, lp(0, WRAP, 1f))
+    return r
+}
+
+private fun MainActivity.confirmLogout() {
+    AlertDialog.Builder(this)
+        .setTitle(tr("Logout"))
+        .setMessage(tr("Do you want to logout?"))
+        .setPositiveButton(tr("Logout")) { _, _ ->
+            Prefs.setEmail("")
+            toast(tr("Logged out"))
+            showSettings()
+        }
+        .setNegativeButton(tr("Cancel"), null)
+        .show()
+}
+
+private fun MainActivity.logoutButton(): View {
+    val red = if (P.dark) 0xFFFF4D6D.toInt() else 0xFFE8245B.toInt()
+    val b = LinearLayout(this)
+    b.orientation = LinearLayout.HORIZONTAL
+    b.gravity = Gravity.CENTER
+    b.background = if (P.dark) rr(0xFF2A0F1E.toInt(), 28, 0xFF5A1D32.toInt(), 1) else rr(0xFFFFE3EA.toInt(), 28)
+    b.addView(IconView(this, K.LOGOUT, red), lp(dp(24), dp(24)))
+    val t = tv(tr("Logout"), 17f, red, 2)
+    t.setPadding(dp(12), 0, 0, 0)
+    b.addView(t)
+    b.setOnClickListener { confirmLogout() }
+    return b
+}
+
+private fun MainActivity.loginButton(): View {
+    val blue = 0xFF2F7DFF.toInt()
+    val b = LinearLayout(this)
+    b.orientation = LinearLayout.HORIZONTAL
+    b.gravity = Gravity.CENTER
+    b.background = if (P.dark) rr(0xFF0E2447.toInt(), 28, 0xFF1B3560.toInt(), 1) else rr(0xFFE3EEFF.toInt(), 28)
+    b.addView(GLogo(this), lp(dp(22), dp(22)))
+    val t = tv(tr("Login"), 17f, blue, 2)
+    t.setPadding(dp(12), 0, 0, 0)
+    b.addView(t)
+    b.setOnClickListener { showLogin("settings") }
+    return b
+}
+
 fun MainActivity.showSettings() {
     screen = "settings"
     val c = LinearLayout(this)
@@ -129,6 +213,9 @@ fun MainActivity.showSettings() {
     at.addView(tagline(11f))
     app.addView(at, lp(0, WRAP, 1f))
     c.addView(app, lpm(MATCH, WRAP, 0, 18, 0, 0))
+
+    val email = Prefs.email()
+    if (email.isNotEmpty()) c.addView(accountCard(email), lpm(MATCH, WRAP, 0, 14, 0, 0))
 
     // main list
     val themeName = tr(if (P.dark) "Dark" else "Light")
@@ -181,6 +268,10 @@ fun MainActivity.showSettings() {
     list2.addView(row(K.DOC, tr("Privacy Policy"), null, null, false) { openPrivacy() })
     list2.addView(row(K.STAR, tr("Rate Us"), tr("Support us with your rating"), null, true) { rateUs() })
     c.addView(list2, lpm(MATCH, WRAP, 0, 16, 0, 0))
+
+    // login or logout
+    val acc = if (email.isNotEmpty()) logoutButton() else loginButton()
+    c.addView(acc, lpm(MATCH, 56, 0, 16, 0, 0))
 
     val sv = ScrollView(this)
     sv.isVerticalScrollBarEnabled = false
