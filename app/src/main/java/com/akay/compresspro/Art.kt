@@ -164,7 +164,7 @@ class PdfGlyph(ctx: Context) : View(ctx) {
     }
 }
 
-// the purple / blue waves at the bottom of the home screen
+// the waves at the bottom of the home screen (purple / blue in Dark, pastel in White)
 class WaveView(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -172,7 +172,19 @@ class WaveView(ctx: Context) : View(ctx) {
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val a = if (P.dark) 255 else 110
+
+        val first: IntArray
+        val secA: Int
+        val secB: Int
+        if (P.dark) {
+            first = intArrayOf(0xFF7B2FF7.toInt(), 0xFF3A1C9E.toInt(), 0xFF0B3FA8.toInt())
+            secA = 0xBF1B3FD0.toInt()
+            secB = 0xBF0E5BFF.toInt()
+        } else {
+            first = intArrayOf(0xFFE0D2FF.toInt(), 0xFFCFDDFF.toInt(), 0xFFBFE0FF.toInt())
+            secA = 0xFFC3DAFF.toInt()
+            secB = 0xFFDCCFFF.toInt()
+        }
 
         path.reset()
         path.moveTo(0f, h * 0.32f)
@@ -181,15 +193,7 @@ class WaveView(ctx: Context) : View(ctx) {
         path.lineTo(0f, h)
         path.close()
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(
-            0f, 0f, w, 0f,
-            intArrayOf(
-                withAlpha(0xFF7B2FF7.toInt(), a),
-                withAlpha(0xFF3A1C9E.toInt(), a),
-                withAlpha(0xFF0B3FA8.toInt(), a)
-            ),
-            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP
-        )
+        p.shader = LinearGradient(0f, 0f, w, 0f, first, floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
         c.drawPath(path, p)
 
         path.reset()
@@ -198,11 +202,7 @@ class WaveView(ctx: Context) : View(ctx) {
         path.lineTo(w, h)
         path.lineTo(0f, h)
         path.close()
-        p.shader = LinearGradient(
-            0f, 0f, w, 0f,
-            withAlpha(0xFF1B3FD0.toInt(), a * 3 / 4), withAlpha(0xFF0E5BFF.toInt(), a * 3 / 4),
-            Shader.TileMode.CLAMP
-        )
+        p.shader = LinearGradient(0f, 0f, w, 0f, secA, secB, Shader.TileMode.CLAMP)
         c.drawPath(path, p)
         p.shader = null
     }
