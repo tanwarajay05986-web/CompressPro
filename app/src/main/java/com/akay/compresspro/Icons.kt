@@ -32,6 +32,11 @@ object K {
     const val DOWNLOAD = 20
     const val LEAF = 21
     const val DATABASE = 22
+    const val ARROW_R = 23
+    const val LOGOUT = 24
+    const val BOLT = 25
+    const val SHIELD_CHECK = 26
+    const val CLOUD = 27
 }
 
 // all small icons are drawn in code
@@ -70,6 +75,15 @@ class IconView(ctx: Context, private val kind: Int, var color: Int) : View(ctx) 
                 path.moveTo(x(0.46f), y(0.22f))
                 path.lineTo(x(0.2f), y(0.5f))
                 path.lineTo(x(0.46f), y(0.78f))
+                c.drawPath(path, p)
+            }
+            K.ARROW_R -> {
+                p.style = Paint.Style.STROKE
+                c.drawLine(x(0.18f), y(0.5f), x(0.8f), y(0.5f), p)
+                path.reset()
+                path.moveTo(x(0.54f), y(0.22f))
+                path.lineTo(x(0.8f), y(0.5f))
+                path.lineTo(x(0.54f), y(0.78f))
                 c.drawPath(path, p)
             }
             K.CHEV_R -> {
@@ -195,6 +209,25 @@ class IconView(ctx: Context, private val kind: Int, var color: Int) : View(ctx) 
                 path.lineTo(x(0.86f), y(0.5f))
                 path.quadTo(x(0.86f), y(0.8f), x(0.5f), y(0.94f))
                 path.close()
+                c.drawPath(path, p)
+            }
+            K.SHIELD_CHECK -> {
+                path.reset()
+                path.moveTo(x(0.5f), y(0.08f))
+                path.lineTo(x(0.86f), y(0.22f))
+                path.lineTo(x(0.86f), y(0.5f))
+                path.quadTo(x(0.86f), y(0.8f), x(0.5f), y(0.94f))
+                path.quadTo(x(0.14f), y(0.8f), x(0.14f), y(0.5f))
+                path.lineTo(x(0.14f), y(0.22f))
+                path.close()
+                c.drawPath(path, p)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.1f * s
+                p.color = Color.WHITE
+                path.reset()
+                path.moveTo(x(0.32f), y(0.5f))
+                path.lineTo(x(0.46f), y(0.64f))
+                path.lineTo(x(0.7f), y(0.36f))
                 c.drawPath(path, p)
             }
             K.FOLDER -> {
@@ -366,6 +399,48 @@ class IconView(ctx: Context, private val kind: Int, var color: Int) : View(ctx) 
                 c.drawArc(rf, 0f, 180f, false, p)
                 rf.set(x(0.2f), y(0.6f), x(0.8f), y(0.82f))
                 c.drawArc(rf, 0f, 180f, false, p)
+            }
+            K.LOGOUT -> {
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.09f * s
+                path.reset()
+                path.moveTo(x(0.46f), y(0.14f))
+                path.lineTo(x(0.16f), y(0.14f))
+                path.lineTo(x(0.16f), y(0.86f))
+                path.lineTo(x(0.46f), y(0.86f))
+                c.drawPath(path, p)
+                c.drawLine(x(0.36f), y(0.5f), x(0.86f), y(0.5f), p)
+                path.reset()
+                path.moveTo(x(0.66f), y(0.3f))
+                path.lineTo(x(0.86f), y(0.5f))
+                path.lineTo(x(0.66f), y(0.7f))
+                c.drawPath(path, p)
+            }
+            K.BOLT -> {
+                path.reset()
+                path.moveTo(x(0.58f), y(0.06f))
+                path.lineTo(x(0.22f), y(0.56f))
+                path.lineTo(x(0.46f), y(0.56f))
+                path.lineTo(x(0.38f), y(0.94f))
+                path.lineTo(x(0.78f), y(0.4f))
+                path.lineTo(x(0.54f), y(0.4f))
+                path.close()
+                c.drawPath(path, p)
+            }
+            K.CLOUD -> {
+                c.drawCircle(x(0.34f), y(0.56f), 0.17f * s, p)
+                c.drawCircle(x(0.52f), y(0.44f), 0.22f * s, p)
+                c.drawCircle(x(0.72f), y(0.58f), 0.16f * s, p)
+                rf.set(x(0.2f), y(0.56f), x(0.86f), y(0.76f))
+                c.drawRoundRect(rf, 0.08f * s, 0.08f * s, p)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 0.075f * s
+                p.color = Color.WHITE
+                path.reset()
+                path.moveTo(x(0.4f), y(0.58f))
+                path.lineTo(x(0.5f), y(0.68f))
+                path.lineTo(x(0.68f), y(0.48f))
+                c.drawPath(path, p)
             }
         }
     }
