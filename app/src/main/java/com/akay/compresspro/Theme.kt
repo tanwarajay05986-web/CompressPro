@@ -14,18 +14,19 @@ fun withAlpha(c: Int, a: Int): Int = (a.coerceIn(0, 255) shl 24) or (c and 0x00F
 
 // colours (they change with the Dark / Light theme)
 object P {
-    var dark = true
-    val bg: Int get() = if (dark) 0xFF040A18.toInt() else 0xFFEFF3FB.toInt()
+    var dark = false
+    val bg: Int get() = if (dark) 0xFF040A18.toInt() else 0xFFF3F6FD.toInt()
     val card: Int get() = if (dark) 0xFF0B1730.toInt() else 0xFFFFFFFF.toInt()
-    val cardEdge: Int get() = if (dark) 0xFF1B3560.toInt() else 0xFFD3DDEE.toInt()
-    val divider: Int get() = if (dark) 0xFF18284A.toInt() else 0xFFE3E9F4.toInt()
-    val text: Int get() = if (dark) 0xFFFFFFFF.toInt() else 0xFF0D1A33.toInt()
-    val sub: Int get() = if (dark) 0xFFB4C6E6.toInt() else 0xFF5A6B8C.toInt()
+    val cardEdge: Int get() = if (dark) 0xFF1B3560.toInt() else 0xFFE2E9F6.toInt()
+    val divider: Int get() = if (dark) 0xFF18284A.toInt() else 0xFFE8EDF7.toInt()
+    val text: Int get() = if (dark) 0xFFFFFFFF.toInt() else 0xFF0F1B3D.toInt()
+    val sub: Int get() = if (dark) 0xFFB4C6E6.toInt() else 0xFF5F6F90.toInt()
     val navBg: Int get() = if (dark) 0xFF070E20.toInt() else 0xFFFFFFFF.toInt()
-    val navOff: Int get() = if (dark) 0xFF4A6090.toInt() else 0xFF8A99B8.toInt()
+    val navOff: Int get() = if (dark) 0xFF4A6090.toInt() else 0xFF8C9AB8.toInt()
     val iconSoft: Int get() = if (dark) 0xFF8CCBFF.toInt() else 0xFF2F86E0.toInt()
-    val chip: Int get() = if (dark) 0xFF0F2347.toInt() else 0xFFE6ECF8.toInt()
-    val field: Int get() = if (dark) 0xFF081832.toInt() else 0xFFF3F6FC.toInt()
+    val chip: Int get() = if (dark) 0xFF0F2347.toInt() else 0xFFEBF1FB.toInt()
+    val field: Int get() = if (dark) 0xFF081832.toInt() else 0xFFF5F8FD.toInt()
+    val tile: Int get() = if (dark) 0x00000000 else 0xFFFFFFFF.toInt()
     val chipSel: IntArray get() = intArrayOf(0xFF1E8BFF.toInt(), 0xFF7A3DFF.toInt())
     val grad3: IntArray get() = intArrayOf(0xFF12C2FF.toInt(), 0xFF3B5BFF.toInt(), 0xFF8A3DFF.toInt())
     val blue = 0xFF1E90FF.toInt()
@@ -59,7 +60,7 @@ object T {
         "App Theme" to "ऐप थीम",
         "Choose your preferred theme" to "अपनी पसंद की थीम चुनें",
         "Dark" to "डार्क",
-        "Light" to "लाइट",
+        "Light" to "व्हाइट",
         "Language" to "भाषा",
         "Select app language" to "ऐप की भाषा चुनें",
         "Output Quality" to "आउटपुट क्वालिटी",
@@ -129,7 +130,31 @@ object T {
         "Compressed size" to "कंप्रेस्ड साइज़",
         "This file got bigger. Try a lower quality or smaller size." to
             "फ़ाइल बड़ी हो गई। कम क्वालिटी या छोटा साइज़ आज़माएँ।",
-        "Could not share" to "शेयर नहीं हो पाया"
+        "Could not share" to "शेयर नहीं हो पाया",
+        "Special 200 KB" to "स्पेशल 200 KB",
+        "Auto" to "ऑटो",
+        "Special mode ON: about 200 KB file. Only dimensions can be changed." to
+            "स्पेशल मोड चालू: फ़ाइल लगभग 200 KB की बनेगी। सिर्फ़ डाइमेंशन बदल सकते हैं।",
+        "Special mode OFF" to "स्पेशल मोड बंद",
+        "Compress Your Images" to "अपनी इमेज",
+        "& PDFs" to "और PDF",
+        "Effortlessly" to "आसानी से कंप्रेस करें",
+        "Save space, share faster, and keep your files in perfect quality." to
+            "जगह बचाएँ, तेज़ी से शेयर करें और फ़ाइलों की क्वालिटी बनाए रखें।",
+        "Fast Compression" to "तेज़ कंप्रेशन",
+        "High Quality Output" to "हाई क्वालिटी आउटपुट",
+        "Easy to Share" to "शेयर करना आसान",
+        "Secure & Private" to "सुरक्षित और प्राइवेट",
+        "Continue with Google" to "Google से जारी रखें",
+        "Skip" to "छोड़ें",
+        "You can always sign in later from settings." to "आप बाद में सेटिंग्स से भी लॉगिन कर सकते हैं।",
+        "Login" to "लॉगिन",
+        "Logout" to "लॉगआउट",
+        "Signed in as" to "लॉगिन:",
+        "Do you want to logout?" to "क्या आप लॉगआउट करना चाहते हैं?",
+        "No Google account was chosen" to "कोई Google अकाउंट नहीं चुना गया",
+        "Could not open account picker" to "अकाउंट पिकर नहीं खुला",
+        "Logged out" to "लॉगआउट हो गया"
     )
 
     fun t(s: String): String = if (hi) (H[s] ?: s) else s
@@ -145,7 +170,7 @@ object Prefs {
         T.hi = lang() == 1
     }
 
-    fun dark(): Boolean = sp!!.getBoolean("dark", true)
+    fun dark(): Boolean = sp!!.getBoolean("dark", false)
 
     fun setDark(v: Boolean) {
         sp!!.edit().putBoolean("dark", v).apply()
@@ -178,5 +203,19 @@ object Prefs {
 
     fun setAsked(v: Boolean) {
         sp!!.edit().putBoolean("asked", v).apply()
+    }
+
+    // login page was shown once (after Continue or Skip)
+    fun loginSeen(): Boolean = sp!!.getBoolean("login_seen", false)
+
+    fun setLoginSeen(v: Boolean) {
+        sp!!.edit().putBoolean("login_seen", v).apply()
+    }
+
+    // the Google account chosen by the user (empty = not logged in)
+    fun email(): String = sp!!.getString("email", "") ?: ""
+
+    fun setEmail(v: String) {
+        sp!!.edit().putString("email", v).apply()
     }
 }
