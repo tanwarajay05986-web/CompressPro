@@ -24,8 +24,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
-// the "Special" mode makes every file about this big
-const val SPECIAL_BYTES = 200 * 1024
+// "Special" mode: every file is made at most this big. 200 KB = 200,000 bytes, which is
+// what the phone's file manager also counts (1 KB = 1000 bytes).
+const val SPECIAL_BYTES = 200_000
 
 // settings chosen on the Compression Settings screen
 class Opts {
@@ -180,6 +181,75 @@ object Engine {
         }
     }
 
+    // ---------- previews of the finished files ----------
+
+    private fun exifRot(f: File): Int {
+        return try {
+            when (ExifInterface(f.absolutePath).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Throwable) {
+            0
+        }
+    }
+
+    // width and height of a finished image
+    fun dimsOf(f: File): IntArray {
+        val bo = BitmapFactory.Options()
+        bo.inJustDecodeBounds = true
+        BitmapFactory.decodeFile(f.absolutePath, bo)
+        val r = exifRot(f)
+        return if (r == 90 || r == 270) intArrayOf(bo.outHeight, bo.outWidth) else intArrayOf(bo.outWidth, bo.outHeight)
+    }
+
+    fun pageCountOf(f: File): Int {
+        return try {
+            val r = PdfRenderer(ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY))
+            val n = r.pageCount
+            r.close()
+            n
+        } catch (e: Throwable) {
+            0
+        }
+    }
+
+    // small picture of a finished image (or of the first page of a finished PDF)
+    fun previewOf(f: File, pdf: Boolean): Bitmap? {
+        return try {
+            if (pdf) {
+                val r = PdfRenderer(ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY))
+                try {
+                    val pg = r.openPage(0)
+                    val bw = 420
+                    val bh = maxOf(1, Math.round(bw * pg.height.toFloat() / pg.width))
+                    val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                    bmp.eraseColor(Color.WHITE)
+                    pg.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    pg.close()
+                    bmp
+                } finally {
+                    r.close()
+                }
+            } else {
+                val bo = BitmapFactory.Options()
+                bo.inJustDecodeBounds = true
+                BitmapFactory.decodeFile(f.absolutePath, bo)
+                if (bo.outWidth <= 0 || bo.outHeight <= 0) return null
+                var sample = 1
+                while (maxOf(bo.outWidth, bo.outHeight) / (sample * 2) >= 500) sample *= 2
+                val o2 = BitmapFactory.Options()
+                o2.inSampleSize = sample
+                val bmp = BitmapFactory.decodeFile(f.absolutePath, o2) ?: return null
+                rotate(bmp, exifRot(f))
+            }
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
     // ---------- sizes and formats ----------
 
     // size of the result for one file (for PDF: the page size at 150 dpi)
@@ -229,9 +299,10 @@ object Engine {
         else -> "image/jpeg"
     }
 
+    // sizes are counted like the phone's file manager does: 1 KB = 1000 bytes
     fun fmtSize(b: Long): Pair<String, String> {
-        val kb = b / 1024.0
-        val mb = kb / 1024.0
+        val kb = b / 1000.0
+        val mb = kb / 1000.0
         return when {
             mb >= 1.0 -> Pair(String.format(Locale.US, "%.1f", mb), "MB")
             kb >= 1.0 -> Pair(String.format(Locale.US, "%.0f", kb), "KB")
@@ -487,7 +558,7 @@ object Engine {
         while (guard < 14) {
             guard++
             for (q in qs) {
-                if (pdfBytes(item, s, sc, q) <= SPECIAL_BYTES * 0.92) return intArrayOf(sc, q)
+                if (pdfBytes(item, s, sc, q) <= SPECIAL_BYTES * 0.9) return intArrayOf(sc, q)
             }
             sc = maxOf(8, (sc * 0.82).toInt())
             if (sc <= 8) break
@@ -515,11 +586,11 @@ object Engine {
         }
         if (o.special) {
             var tries = 0
-            while (out.length() > SPECIAL_BYTES * 1.04 && tries < 3 && !cancelled()) {
+            while (out.length() > SPECIAL_BYTES && tries < 6 && !cancelled()) {
                 tries++
                 val k = Math.sqrt(SPECIAL_BYTES.toDouble() / out.length()) * 0.93
-                scale = maxOf(8, (scale * k).toInt())
-                q = maxOf(15, q - 5)
+                scale = maxOf(8, minOf(scale - 1, (scale * k).toInt()))
+                q = maxOf(15, q - 4)
                 if (!writePdf(item, scale, q, out, cancelled, prog)) {
                     out.delete()
                     return null
