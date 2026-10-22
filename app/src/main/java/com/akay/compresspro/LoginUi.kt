@@ -14,9 +14,66 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 
-// two photos (5.2 MB -> 1.1 MB) shown on the login page
+// soft corner and waves behind the login page
+class LoginDeco(ctx: Context) : View(ctx) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val dk = P.dark
+        p.style = Paint.Style.FILL
+        p.shader = null
+
+        // top-left blob
+        path.reset()
+        path.moveTo(0f, 0f)
+        path.lineTo(w * 0.24f, 0f)
+        path.cubicTo(w * 0.22f, h * 0.05f, w * 0.1f, h * 0.1f, 0f, h * 0.17f)
+        path.close()
+        p.color = if (dk) 0x14FFFFFF else 0xFFE8EDFC.toInt()
+        c.drawPath(path, p)
+
+        // big wave
+        path.reset()
+        path.moveTo(0f, h * 0.935f)
+        path.cubicTo(w * 0.3f, h * 0.9f, w * 0.62f, h * 1.0f, w, h * 0.9f)
+        path.lineTo(w, h)
+        path.lineTo(0f, h)
+        path.close()
+        p.shader = LinearGradient(
+            0f, 0f, w, 0f,
+            if (dk) 0x33407BFF else 0xFFD2E4FF.toInt(),
+            if (dk) 0x338A5BFF else 0xFFDBD3FF.toInt(),
+            Shader.TileMode.CLAMP
+        )
+        c.drawPath(path, p)
+
+        // purple wave on the right
+        path.reset()
+        path.moveTo(w, h * 0.8f)
+        path.cubicTo(w * 0.95f, h * 0.9f, w * 0.86f, h * 0.97f, w * 0.72f, h)
+        path.lineTo(w, h)
+        path.close()
+        p.shader = null
+        p.color = if (dk) 0x338A5BFF else 0xFFDAD0FF.toInt()
+        c.drawPath(path, p)
+
+        // blue wave on the left
+        path.reset()
+        path.moveTo(0f, h * 0.965f)
+        path.cubicTo(w * 0.25f, h * 0.945f, w * 0.5f, h * 0.995f, w * 0.72f, h * 0.985f)
+        path.lineTo(w * 0.72f, h)
+        path.lineTo(0f, h)
+        path.close()
+        p.color = if (dk) 0x33407BFF else 0xFFC4DBFF.toInt()
+        c.drawPath(path, p)
+    }
+}
+
+// two photos (5.2 MB -> 1.1 MB). It always fits inside the space it gets.
 class LoginArt(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tp = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -91,12 +148,17 @@ class LoginArt(ctx: Context) : View(ctx) {
     }
 
     override fun onDraw(c: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
+        val aw = width.toFloat()
+        val ah = height.toFloat()
+        val aspect = 1.75f
+        val w = minOf(aw, ah * aspect)
+        val h = w / aspect
+        c.save()
+        c.translate((aw - w) / 2f, (ah - h) / 2f)
 
         rf.set(w * 0.04f, h * 0.2f, w * 0.96f, h * 0.98f)
         p.style = Paint.Style.FILL
-        p.color = if (P.dark) 0x14FFFFFF else 0xFFEDF1FD.toInt()
+        p.color = if (P.dark) 0x14FFFFFF else 0xFFEAEFFC.toInt()
         c.drawOval(rf, p)
 
         photo(c, w * 0.1f, h * 0.1f, w * 0.46f, h * 0.76f, -8f)
@@ -125,6 +187,7 @@ class LoginArt(ctx: Context) : View(ctx) {
         sparkle(c, w * 0.88f, h * 0.18f, w * 0.035f, 0xFF2FA8FF.toInt())
         sparkle(c, w * 0.94f, h * 0.34f, w * 0.026f, 0xFF3B7BFF.toInt())
         sparkle(c, w * 0.84f, h * 0.42f, w * 0.016f, 0xFF7C9CFF.toInt())
+        c.restore()
     }
 }
 
@@ -156,69 +219,87 @@ class GLogo(ctx: Context) : View(ctx) {
     }
 }
 
-private fun MainActivity.feature(icon: Int, tint: Int, softBg: Int, label: String): View {
+private fun MainActivity.feature(icon: Int, tint: Int, softBg: Int, full: String, l1: String, l2: String): View {
     val col = LinearLayout(this)
     col.orientation = LinearLayout.VERTICAL
     col.gravity = Gravity.CENTER_HORIZONTAL
     val tile = FrameLayout(this)
     tile.background = rr(if (P.dark) withAlpha(tint, 40) else softBg, 18)
-    tile.addView(IconView(this, icon, tint), FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
-    col.addView(tile, lp(dp(56), dp(56)))
-    val t = tv(tr(label), 12f, P.sub)
+    tile.addView(IconView(this, icon, tint), FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
+    col.addView(tile, lp(dp(52), dp(52)))
+    val text = if (T.hi) tr(full) else l1 + "\n" + l2
+    val t = tv(text, 12f, P.sub)
     t.gravity = Gravity.CENTER
-    col.addView(t, lpm(MATCH, WRAP, 0, 8, 0, 0))
+    col.addView(t, lpm(MATCH, WRAP, 0, 6, 0, 0))
     return col
 }
 
-// the login page: Continue with Google or Skip
+// the login page: Continue with Google or Skip. Everything fits on one screen (no scrolling).
 fun MainActivity.showLogin(from: String) {
     loginReturn = from
     screen = "login"
 
+    val root = FrameLayout(this)
+    root.addView(LoginDeco(this), FrameLayout.LayoutParams(MATCH, MATCH))
+
     val c = LinearLayout(this)
     c.orientation = LinearLayout.VERTICAL
     c.gravity = Gravity.CENTER_HORIZONTAL
-    c.setPadding(dp(24), dp(22), dp(24), dp(20))
+    c.setPadding(dp(24), dp(10), dp(24), dp(14))
 
     // logo tile with the download badge
     val logo = FrameLayout(this)
-    logo.background = grad(P.grad3, GradientDrawable.Orientation.TL_BR, 26)
-    logo.addView(IconView(this, K.IMAGE, Color.WHITE), FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER))
+    logo.background = grad(P.grad3, GradientDrawable.Orientation.TL_BR, 24)
+    logo.addView(IconView(this, K.IMAGE, Color.WHITE), FrameLayout.LayoutParams(dp(46), dp(46), Gravity.CENTER))
     val badge = FrameLayout(this)
     val bd = GradientDrawable()
     bd.shape = GradientDrawable.OVAL
     bd.setColor(Color.WHITE)
     badge.background = bd
-    badge.addView(IconView(this, K.DOWNLOAD, 0xFF3B5BFF.toInt()), FrameLayout.LayoutParams(dp(15), dp(15), Gravity.CENTER))
-    val bp = FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END)
+    badge.addView(IconView(this, K.DOWNLOAD, 0xFF3B5BFF.toInt()), FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER))
+    val bp = FrameLayout.LayoutParams(dp(28), dp(28), Gravity.BOTTOM or Gravity.END)
     bp.setMargins(0, 0, dp(4), dp(4))
     logo.addView(badge, bp)
-    c.addView(logo, lp(dp(84), dp(84)))
+    c.addView(logo, lp(dp(76), dp(76)))
 
-    c.addView(brandRow(30f), lpm(WRAP, WRAP, 0, 12, 0, 0))
+    c.addView(brandRow(28f), lpm(WRAP, WRAP, 0, 8, 0, 0))
     c.addView(tagline(13f), lpm(WRAP, WRAP, 0, 2, 0, 0))
-    c.addView(LoginArt(this), lpm(MATCH, 150, 0, 10, 0, 0))
 
-    val h1 = tv(tr("Compress Your Images"), 22f, P.text, 2)
+    // the picture takes whatever space is left
+    c.addView(LoginArt(this), lp(MATCH, 0, 1f))
+
+    val h1 = tv(tr("Compress Your Images"), 21f, P.text, 2)
     h1.gravity = Gravity.CENTER
-    c.addView(h1, lpm(WRAP, WRAP, 0, 8, 0, 0))
+    c.addView(h1, lp(WRAP, WRAP))
     val h2 = LinearLayout(this)
     h2.orientation = LinearLayout.HORIZONTAL
-    h2.addView(tv(tr("& PDFs") + " ", 22f, P.text, 2))
-    h2.addView(gradText(tr("Effortlessly"), 22f, 0xFF2F7DFF.toInt(), 0xFF8A3DFF.toInt()))
+    h2.addView(tv(tr("& PDFs") + " ", 21f, P.text, 2))
+    h2.addView(gradText(tr("Effortlessly"), 21f, 0xFF2F7DFF.toInt(), 0xFF8A3DFF.toInt()))
     c.addView(h2, lp(WRAP, WRAP))
-    val sub = tv(tr("Save space, share faster, and keep your files in perfect quality."), 14f, P.sub)
+    val sub = tv(tr("Save space, share faster, and keep your files in perfect quality."), 13.5f, P.sub)
     sub.gravity = Gravity.CENTER
-    c.addView(sub, lpm(MATCH, WRAP, 8, 10, 8, 0))
+    c.addView(sub, lpm(MATCH, WRAP, 12, 8, 12, 0))
 
     // four small features
     val feats = LinearLayout(this)
     feats.orientation = LinearLayout.HORIZONTAL
-    feats.addView(feature(K.BOLT, 0xFF3B7BFF.toInt(), 0xFFE8EFFF.toInt(), "Fast Compression"), lp(0, WRAP, 1f))
-    feats.addView(feature(K.SHIELD_CHECK, 0xFF22C26E.toInt(), 0xFFDDF6EA.toInt(), "High Quality Output"), lp(0, WRAP, 1f))
-    feats.addView(feature(K.CLOUD, 0xFF7C4DFF.toInt(), 0xFFEADFFF.toInt(), "Easy to Share"), lp(0, WRAP, 1f))
-    feats.addView(feature(K.LOCK, 0xFFFFA11A.toInt(), 0xFFFFEBD9.toInt(), "Secure & Private"), lp(0, WRAP, 1f))
-    c.addView(feats, lpm(MATCH, WRAP, 0, 20, 0, 0))
+    feats.addView(
+        feature(K.BOLT, 0xFF3B7BFF.toInt(), 0xFFE8EFFF.toInt(), "Fast Compression", "Fast", "Compression"),
+        lp(0, WRAP, 1f)
+    )
+    feats.addView(
+        feature(K.SHIELD_CHECK, 0xFF22C26E.toInt(), 0xFFDDF6EA.toInt(), "High Quality Output", "High Quality", "Output"),
+        lp(0, WRAP, 1f)
+    )
+    feats.addView(
+        feature(K.CLOUD, 0xFF7C4DFF.toInt(), 0xFFEADFFF.toInt(), "Easy to Share", "Easy to", "Share"),
+        lp(0, WRAP, 1f)
+    )
+    feats.addView(
+        feature(K.LOCK, 0xFFFFA11A.toInt(), 0xFFFFEBD9.toInt(), "Secure & Private", "Secure", "& Private"),
+        lp(0, WRAP, 1f)
+    )
+    c.addView(feats, lpm(MATCH, WRAP, 0, 14, 0, 0))
 
     // Continue with Google
     val g = LinearLayout(this)
@@ -231,34 +312,31 @@ fun MainActivity.showLogin(from: String) {
     val gt = tv(tr("Continue with Google"), 17f, P.text, 2)
     gt.gravity = Gravity.CENTER
     g.addView(gt, lp(0, WRAP, 1f))
-    g.addView(IconView(this, K.ARROW_R, P.text), lp(dp(22), dp(22)))
+    g.addView(Icon2View(this, K2.ARROW_THIN, P.text), lp(dp(26), dp(26)))
     g.setOnClickListener { pickGoogleAccount() }
-    c.addView(g, lpm(MATCH, 56, 0, 22, 0, 0))
+    c.addView(g, lpm(MATCH, 54, 0, 16, 0, 0))
 
     // Skip
     val s = LinearLayout(this)
     s.orientation = LinearLayout.HORIZONTAL
     s.gravity = Gravity.CENTER_VERTICAL
-    s.background = rr(Color.TRANSPARENT, 28, if (P.dark) 0xFF3A4A8A.toInt() else 0xFFC9C6F5.toInt(), 1)
+    s.background = rr(Color.TRANSPARENT, 26, if (P.dark) 0xFF3A4A8A.toInt() else 0xFFC9C6F5.toInt(), 1)
     s.setPadding(dp(22), 0, dp(22), 0)
-    s.addView(View(this), lp(dp(22), dp(22)))
+    s.addView(View(this), lp(dp(26), dp(26)))
     val st = tv(tr("Skip"), 17f, P.sub, 1)
     st.gravity = Gravity.CENTER
     s.addView(st, lp(0, WRAP, 1f))
-    s.addView(IconView(this, K.ARROW_R, P.sub), lp(dp(22), dp(22)))
+    s.addView(Icon2View(this, K2.ARROW_THIN, P.sub), lp(dp(26), dp(26)))
     s.setOnClickListener {
         Prefs.setLoginSeen(true)
         leaveLogin()
     }
-    c.addView(s, lpm(MATCH, 52, 0, 12, 0, 0))
+    c.addView(s, lpm(MATCH, 50, 0, 10, 0, 0))
 
     val note = tv(tr("You can always sign in later from settings."), 12f, P.sub)
     note.gravity = Gravity.CENTER
-    c.addView(note, lpm(MATCH, WRAP, 0, 14, 0, 0))
+    c.addView(note, lpm(MATCH, WRAP, 0, 10, 0, 0))
 
-    val sv = ScrollView(this)
-    sv.isVerticalScrollBarEnabled = false
-    sv.isFillViewport = true
-    sv.addView(c)
-    setScreen(sv, P.bg)
+    root.addView(c, FrameLayout.LayoutParams(MATCH, MATCH))
+    setScreen(root, if (P.dark) P.bg else 0xFFD9DEFB.toInt())
 }
