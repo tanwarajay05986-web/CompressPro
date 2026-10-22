@@ -41,7 +41,8 @@ class MainActivity : ComponentActivity() {
     // where to go after the login page ("home" or "settings")
     internal var loginReturn = "home"
 
-    private val cui = CompressUi(this)
+    internal val cui = CompressUi(this)
+    internal val resultUi = ResultUi(this)
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -264,6 +265,7 @@ class MainActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when (screen) {
                     "settings", "compress" -> showHome()
+                    "result" -> resultUi.onBack()
                     "login" -> {
                         Prefs.setLoginSeen(true)
                         leaveLogin()
@@ -291,7 +293,7 @@ class MainActivity : ComponentActivity() {
 
     // ---------- picking files ----------
 
-    private fun pickFiles(pdf: Boolean) {
+    internal fun pickFiles(pdf: Boolean) {
         if (pdf) pdfPicker.launch(arrayOf("application/pdf")) else imgPicker.launch("image/*")
     }
 
