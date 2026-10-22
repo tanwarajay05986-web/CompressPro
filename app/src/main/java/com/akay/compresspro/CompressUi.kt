@@ -1,6 +1,5 @@
 package com.akay.compresspro
 
-import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -19,12 +18,10 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import java.io.File
 
-// the Compression Settings screen (image / PDF) and the compress run
+// the Compression Settings screen (image / PDF). The compress run itself is on the result screen.
 class CompressUi(private val a: MainActivity) {
 
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -37,9 +34,6 @@ class CompressUi(private val a: MainActivity) {
     private val o = Opts()
     private var updating = false
     private var estVer = 0
-
-    @Volatile
-    private var cancelled = false
 
     private lateinit var thumbRow: LinearLayout
     private lateinit var estNum: TextView
@@ -99,6 +93,7 @@ class CompressUi(private val a: MainActivity) {
 
     // ---------- the screen ----------
 
+    // a new set of files: the settings start from the defaults
     fun show(isPdf: Boolean, list: List<Item>) {
         pdf = isPdf
         items = ArrayList(list)
@@ -111,6 +106,15 @@ class CompressUi(private val a: MainActivity) {
         o.fmt = 0
         o.pdf = isPdf
         o.special = false
+        buildScreen()
+    }
+
+    // come back from the result screen with the same files and the same settings
+    fun reshow() {
+        if (items.isEmpty()) a.showHome() else buildScreen()
+    }
+
+    private fun buildScreen() {
         qChips.clear()
         dChips.clear()
         fChips.clear()
@@ -355,7 +359,7 @@ class CompressUi(private val a: MainActivity) {
         return card
     }
 
-    // free "Special 200 KB" mode (crown): the file is made about 200 KB, only dimensions can be changed
+    // free "Special 200 KB" mode (crown): the file is made 200 KB or less, only dimensions can be changed
     private fun specialButton(): View {
         val f = FrameLayout(a)
         specialBtn = f
@@ -727,120 +731,10 @@ class CompressUi(private val a: MainActivity) {
         estBar.frac = if (orig > 0) (est.toFloat() / orig).coerceIn(0.03f, 1f) else 0.1f
     }
 
-    // ---------- compress run (a simple progress box; the full design comes in Stage 3) ----------
+    // ---------- start ----------
 
     private fun startCompress() {
         if (items.isEmpty()) return
-        cancelled = false
-        val its = ArrayList(items)
-        val oc = o.copy()
-        val n = its.size
-
-        val box = LinearLayout(a)
-        box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(24), dp(16), dp(24), dp(8))
-        val msg = a.tv("", 15f, Color.WHITE)
-        val bar = ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal)
-        bar.max = 100
-        box.addView(msg)
-        box.addView(bar, lpm(MATCH, WRAP, 0, 12, 0, 0))
-        val dlg = AlertDialog.Builder(a)
-            .setTitle(tr("Compressing…"))
-            .setView(box)
-            .setCancelable(false)
-            .setNegativeButton(tr("Cancel")) { _, _ -> cancelled = true }
-            .create()
-        dlg.show()
-
-        Thread {
-            val dir = File(a.cacheDir, "out")
-            dir.mkdirs()
-            dir.listFiles()?.forEach { f -> f.delete() }
-            var failed = 0
-            for (idx in its.indices) {
-                if (cancelled) break
-                val item = its[idx]
-                a.runOnUiThread { msg.text = tr("File") + " ${idx + 1}/$n  \u2022  " + item.name }
-                val cb = { p: Float ->
-                    a.runOnUiThread { bar.progress = (((idx + p) / n) * 100f).toInt() }
-                }
-                val f = try {
-                    if (item.pdf) Engine.compressPdf(a, item, oc, dir, idx, { cancelled }, cb)
-                    else Engine.compressImage(a, item, oc, dir, idx, { cancelled }, cb)
-                } catch (e: Throwable) {
-                    null
-                }
-                item.outFile = f
-                if (f == null && !cancelled) failed++
-            }
-            a.runOnUiThread {
-                try {
-                    dlg.dismiss()
-                } catch (e: Throwable) {
-                }
-                finishCompress(its, failed)
-            }
-        }.start()
-    }
-
-    private fun finishCompress(its: List<Item>, failed: Int) {
-        if (cancelled) {
-            a.toast(tr("Cancelled"))
-            return
-        }
-        val done = its.filter { it.outFile != null }
-        if (done.isEmpty()) {
-            a.toast(tr("Compression failed"))
-            return
-        }
-        var orig = 0L
-        var outSz = 0L
-        for (i in done) {
-            orig += i.size
-            outSz += i.outFile!!.length()
-        }
-        val pct = if (orig > 0) ((orig - outSz) * 100 / orig).toInt().coerceAtLeast(0) else 0
-        val (ov, ou) = Engine.fmtSize(orig)
-        val (cv, cu) = Engine.fmtSize(outSz)
-        val sb = StringBuilder()
-        sb.append(tr("Original size")).append(": ").append(ov).append(' ').append(ou).append('\n')
-        sb.append(tr("Compressed size")).append(": ").append(cv).append(' ').append(cu)
-        sb.append("  (-").append(pct).append("%)")
-        if (outSz >= orig) sb.append("\n\n").append(tr("This file got bigger. Try a lower quality or smaller size."))
-        if (failed > 0) sb.append("\n\n").append(tr("Some files failed")).append(": ").append(failed)
-
-        val dlg = AlertDialog.Builder(a)
-            .setTitle(tr("Compression Completed!"))
-            .setMessage(sb.toString())
-            .setPositiveButton(tr("Save"), null)
-            .setNegativeButton(tr("Share"), null)
-            .setNeutralButton(tr("Close")) { d, _ -> d.dismiss() }
-            .create()
-        dlg.show()
-        val saveBtn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
-        saveBtn.setOnClickListener {
-            var ok = 0
-            var where = ""
-            for (i in done) {
-                val r = Engine.saveToDevice(a, i.outFile!!, Prefs.storage())
-                if (r != null) {
-                    ok++
-                    where = r
-                }
-            }
-            if (ok > 0) {
-                a.toast(tr("Saved to") + " " + where)
-                saveBtn.isEnabled = false
-            } else {
-                a.toast(tr("Could not save"))
-            }
-        }
-        dlg.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-            try {
-                Engine.share(a, done.map { it.outFile!! })
-            } catch (e: Throwable) {
-                a.toast(tr("Could not share"))
-            }
-        }
+        a.resultUi.run(ArrayList(items), o.copy(), pdf)
     }
 }
