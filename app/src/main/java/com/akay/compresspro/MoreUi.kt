@@ -1,6 +1,7 @@
 package com.akay.compresspro
 
 import android.app.Dialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
