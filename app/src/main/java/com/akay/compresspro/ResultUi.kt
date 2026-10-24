@@ -1,11 +1,13 @@
 package com.akay.compresspro
 
 import android.animation.ValueAnimator
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -46,7 +48,6 @@ class ResultUi(private val a: MainActivity) {
     private lateinit var qualSub: TextView
     private lateinit var shareBtn: Btn
     private lateinit var saveBtn: Btn
-    private lateinit var againBtn: Btn
 
     private class PCard(
         val root: FrameLayout, val img: ImageView, val size: TextView, val dims: TextView, val pill: TextView?
@@ -172,7 +173,6 @@ class ResultUi(private val a: MainActivity) {
         // original and compressed pictures
         val pr = LinearLayout(a)
         pr.orientation = LinearLayout.HORIZONTAL
-        pr.minimumHeight = dp(190)
         origCard = previewCard(false)
         compCard = previewCard(true)
         val lo = lp(0, MATCH, 1f)
@@ -181,26 +181,51 @@ class ResultUi(private val a: MainActivity) {
         lc.leftMargin = dp(6)
         pr.addView(origCard.root, lo)
         pr.addView(compCard.root, lc)
-        val plp = lp(MATCH, 0, 1f)
-        plp.topMargin = dp(14)
-        c.addView(pr, plp)
+        c.addView(pr, lpm(MATCH, 230, 0, 14, 0, 0))
 
         c.addView(statsCard(), lpm(MATCH, WRAP, 0, 14, 0, 0))
 
+        // Share and Save
         val row = LinearLayout(a)
         row.orientation = LinearLayout.HORIZONTAL
-        shareBtn = actionBtn(0, "Share", "Share your compressed file") { doShare() }
-        saveBtn = actionBtn(1, "Save", "Save to device") { doSave() }
-        againBtn = actionBtn(2, "Compress Again", "Start a new process") { doAgain() }
-        val l1 = lp(0, WRAP, 1.5f)
+        shareBtn = actionBtn(0, "Share", "Share your compressed file") {
+            if (done) Ads.show(a) { doShare() }
+        }
+        saveBtn = actionBtn(1, "Save", "Save to device") {
+            if (done) {
+                if (saved) a.toast(tr("Already saved")) else Ads.show(a) { doSave() }
+            }
+        }
+        val l1 = lp(0, WRAP, 1.4f)
         val l2 = lp(0, WRAP, 1f)
         l2.leftMargin = dp(8)
-        val l3 = lp(0, WRAP, 1.25f)
-        l3.leftMargin = dp(8)
         row.addView(shareBtn.root, l1)
         row.addView(saveBtn.root, l2)
-        row.addView(againBtn.root, l3)
         c.addView(row, lpm(MATCH, WRAP, 0, 12, 0, 0))
+
+        // Rate Us and More Apps
+        val rm = LinearLayout(a)
+        rm.orientation = LinearLayout.HORIZONTAL
+        val orange = 0xFFFF9F1C.toInt()
+        val violet = 0xFF6B4DFF.toInt()
+        val rate = miniCard(
+            IconView(a, K.STAR, orange), orange,
+            if (P.dark) 0x33FFA11A else 0xFFFFF1DA.toInt(),
+            if (P.dark) 0x55FFA11A else 0xFFFFE2B0.toInt(),
+            tr("Rate Us"), tr("Support us with your rating")
+        ) { rateUs() }
+        val more = miniCard(
+            GridIcon(a, violet), violet,
+            if (P.dark) 0x337C4DFF else 0xFFEAE5FF.toInt(),
+            if (P.dark) 0x557C4DFF else 0xFFD9D0FF.toInt(),
+            T2.t("More Apps"), T2.t("Discover more useful apps")
+        ) { a.showMoreApps() }
+        val r1 = lp(0, WRAP, 1f)
+        val r2 = lp(0, WRAP, 1f)
+        r2.leftMargin = dp(8)
+        rm.addView(rate, r1)
+        rm.addView(more, r2)
+        c.addView(rm, lpm(MATCH, WRAP, 0, 10, 0, 0))
 
         c.addView(backHomeButton(), lpm(MATCH, 62, 0, 12, 0, 0))
 
@@ -222,42 +247,48 @@ class ResultUi(private val a: MainActivity) {
 
         val col = LinearLayout(a)
         col.orientation = LinearLayout.VERTICAL
+
+        // the picture, with the green "-82%" label on it (compressed card only)
+        val imgBox = FrameLayout(a)
         val img = ImageView(a)
         img.scaleType = ImageView.ScaleType.CENTER_CROP
         img.setBackgroundColor(P.chip)
-        col.addView(img, lp(MATCH, 0, 1f))
+        imgBox.addView(img, FrameLayout.LayoutParams(MATCH, MATCH))
+        var pill: TextView? = null
+        if (comp) {
+            val pt = a.tv("", 12.5f, 0xFF0FA968.toInt(), 2)
+            pt.setPadding(dp(9), dp(4), dp(9), dp(4))
+            pt.background = a.rr(0xF2FFFFFF.toInt(), 12)
+            pt.visibility = View.GONE
+            val plp = FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END)
+            plp.setMargins(0, 0, dp(8), dp(8))
+            imgBox.addView(pt, plp)
+            pill = pt
+        }
+        col.addView(imgBox, lp(MATCH, 0, 1f))
 
         val info = LinearLayout(a)
         info.orientation = LinearLayout.HORIZONTAL
         info.gravity = Gravity.CENTER_VERTICAL
         info.setBackgroundColor(P.card)
-        info.setPadding(dp(10), dp(8), dp(10), dp(8))
+        info.setPadding(dp(8), dp(8), dp(8), dp(8))
         val tile = FrameLayout(a)
         tile.background = a.rr(P.chip, 10)
         tile.addView(
             IconView(a, if (pdf) K.DOC else K.IMAGE, P.iconSoft),
-            FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+            FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
         )
-        info.addView(tile, lp(dp(36), dp(36)))
+        info.addView(tile, lp(dp(32), dp(32)))
         val tc = LinearLayout(a)
         tc.orientation = LinearLayout.VERTICAL
-        tc.setPadding(dp(8), 0, dp(4), 0)
-        val size = a.tv("", 15f, P.text, 2)
-        size.maxLines = 1
-        val dims = a.tv("", 11.5f, P.sub)
-        dims.maxLines = 1
+        tc.setPadding(dp(8), 0, 0, 0)
+        val size = a.tv("", 14.5f, P.text, 2)
+        size.setSingleLine(true)
+        val dims = a.tv("", 11f, P.sub)
+        dims.setSingleLine(true)
         tc.addView(size)
         tc.addView(dims)
         info.addView(tc, lp(0, WRAP, 1f))
-        var pill: TextView? = null
-        if (comp) {
-            val pt = a.tv("", 12.5f, P.green, 2)
-            pt.setPadding(dp(8), dp(4), dp(8), dp(4))
-            pt.background = a.rr(0x2219E39A, 12)
-            pt.visibility = View.GONE
-            info.addView(pt)
-            pill = pt
-        }
         col.addView(info, lp(MATCH, WRAP))
         root.addView(col, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -286,14 +317,17 @@ class ResultUi(private val a: MainActivity) {
         rb.addView(ring, FrameLayout.LayoutParams(MATCH, MATCH))
         rb.addView(
             IconView(a, if (pdf) K.DOC else K.IMAGE, P.iconSoft),
-            FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER)
+            FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
         )
-        left.addView(rb, lp(dp(72), dp(72)))
+        left.addView(rb, lp(dp(56), dp(56)))
         val lc = LinearLayout(a)
         lc.orientation = LinearLayout.VERTICAL
-        lc.setPadding(dp(10), 0, 0, 0)
-        lc.addView(a.tv(tr("File Size Reduced"), 12.5f, P.text, 1))
-        redPct = a.tv("0%", 30f, 0xFF19C98A.toInt(), 2)
+        lc.setPadding(dp(8), 0, 0, 0)
+        val lt = a.tv(tr("File Size Reduced"), 11f, P.text, 1)
+        lt.setSingleLine(true)
+        lc.addView(lt)
+        redPct = a.tv("0%", 26f, 0xFF19C98A.toInt(), 2)
+        redPct.setSingleLine(true)
         redPct.post {
             val w = redPct.paint.measureText("00%")
             redPct.paint.shader = LinearGradient(
@@ -302,15 +336,15 @@ class ResultUi(private val a: MainActivity) {
             redPct.invalidate()
         }
         lc.addView(redPct)
-        fromTo = a.tv("", 11.5f, P.sub)
-        fromTo.maxLines = 2
+        fromTo = a.tv("", 10.5f, P.sub)
+        fromTo.setSingleLine(true)
         lc.addView(fromTo)
         left.addView(lc, lp(0, WRAP, 1f))
-        card.addView(left, lp(0, WRAP, 1.15f))
+        card.addView(left, lp(0, WRAP, 1.5f))
 
         val dv = View(a)
         dv.setBackgroundColor(P.divider)
-        val dl = lp(dp(1), dp(58))
+        val dl = lp(dp(1), dp(50))
         dl.setMargins(dp(8), 0, dp(8), 0)
         card.addView(dv, dl)
 
@@ -323,26 +357,29 @@ class ResultUi(private val a: MainActivity) {
         ld.shape = GradientDrawable.OVAL
         ld.setColor(0x2219E39A)
         leaf.background = ld
-        leaf.addView(IconView(a, K.LEAF, 0xFF19C98A.toInt()), FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
-        right.addView(leaf, lp(dp(46), dp(46)))
+        leaf.addView(IconView(a, K.LEAF, 0xFF19C98A.toInt()), FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        right.addView(leaf, lp(dp(34), dp(34)))
         val rc = LinearLayout(a)
         rc.orientation = LinearLayout.VERTICAL
-        rc.setPadding(dp(10), 0, 0, 0)
-        rc.addView(a.tv(tr("Quality Preserved"), 13f, P.text, 2))
-        qualSub = a.tv("", 11f, P.sub)
+        rc.setPadding(dp(8), 0, 0, 0)
+        val qt = a.tv(tr("Quality Preserved"), 12f, P.text, 2)
+        qt.maxLines = 2
+        rc.addView(qt)
+        qualSub = a.tv("", 10f, P.sub)
+        qualSub.maxLines = 4
         rc.addView(qualSub)
         right.addView(rc, lp(0, WRAP, 1f))
         card.addView(right, lp(0, WRAP, 1f))
         return card
     }
 
-    // kind 0 = Share (filled), 1 = Save, 2 = Compress Again
+    // kind 0 = Share (filled), 1 = Save
     private fun actionBtn(kind: Int, title: String, sub: String, onClick: () -> Unit): Btn {
         val b = LinearLayout(a)
         b.orientation = LinearLayout.HORIZONTAL
         b.gravity = Gravity.CENTER_VERTICAL
-        b.minimumHeight = dp(58)
-        b.setPadding(dp(10), dp(8), dp(8), dp(8))
+        b.minimumHeight = dp(60)
+        b.setPadding(dp(12), dp(8), dp(8), dp(8))
         val filled = kind == 0
         b.background = if (filled) a.grad(P.chipSel, GradientDrawable.Orientation.LEFT_RIGHT, 18)
         else a.rr(P.card, 18, P.cardEdge, 1)
@@ -356,7 +393,7 @@ class ResultUi(private val a: MainActivity) {
             td.setColor(P.chip)
             tile.background = td
             tile.addView(
-                IconView(a, if (kind == 1) K.FOLDER else K.REFRESH, P.iconSoft),
+                IconView(a, K.FOLDER, P.iconSoft),
                 FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
             )
             b.addView(tile, lp(dp(34), dp(34)))
@@ -364,8 +401,8 @@ class ResultUi(private val a: MainActivity) {
         val col = LinearLayout(a)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(8), 0, 0, 0)
-        val t = a.tv(tr(title), 13.5f, if (filled) Color.WHITE else P.text, 2)
-        t.maxLines = 2
+        val t = a.tv(tr(title), 14f, if (filled) Color.WHITE else P.text, 2)
+        t.setSingleLine(true)
         val s = a.tv(tr(sub), 10f, if (filled) 0xDDFFFFFF.toInt() else P.sub)
         s.maxLines = 2
         col.addView(t)
@@ -373,6 +410,51 @@ class ResultUi(private val a: MainActivity) {
         b.addView(col, lp(0, WRAP, 1f))
         b.setOnClickListener { onClick() }
         return Btn(b, t, s)
+    }
+
+    // the small coloured cards: Rate Us and More Apps
+    private fun miniCard(
+        icon: View, accent: Int, bg: Int, edge: Int, title: String, sub: String, onClick: () -> Unit
+    ): LinearLayout {
+        val b = LinearLayout(a)
+        b.orientation = LinearLayout.HORIZONTAL
+        b.gravity = Gravity.CENTER_VERTICAL
+        b.minimumHeight = dp(62)
+        b.setPadding(dp(10), dp(10), dp(8), dp(10))
+        b.background = a.rr(bg, 18, edge, 1)
+        val circ = FrameLayout(a)
+        val cd = GradientDrawable()
+        cd.shape = GradientDrawable.OVAL
+        cd.setColor(if (P.dark) 0x33FFFFFF else 0xFFFFFFFF.toInt())
+        circ.background = cd
+        circ.addView(icon, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        b.addView(circ, lp(dp(38), dp(38)))
+        val col = LinearLayout(a)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(8), 0, dp(2), 0)
+        val t = a.tv(title, 13.5f, P.text, 2)
+        t.setSingleLine(true)
+        val s = a.tv(sub, 10f, P.sub)
+        s.maxLines = 2
+        col.addView(t)
+        col.addView(s)
+        b.addView(col, lp(0, WRAP, 1f))
+        b.addView(IconView(a, K.CHEV_R, accent), lp(dp(14), dp(14)))
+        b.setOnClickListener { onClick() }
+        return b
+    }
+
+    private fun rateUs() {
+        try {
+            a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + a.packageName)))
+        } catch (e: Throwable) {
+            try {
+                val u = "https://play.google.com/store/apps/details?id=" + a.packageName
+                a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)))
+            } catch (e2: Throwable) {
+                a.toast(tr("Could not open Play Store"))
+            }
+        }
     }
 
     private fun backHomeButton(): View {
@@ -395,7 +477,9 @@ class ResultUi(private val a: MainActivity) {
         col.addView(a.tv(tr("Back to Home"), 17f, Color.WHITE, 2))
         col.addView(a.tv(tr("Go to main screen"), 11.5f, 0xDDFFFFFF.toInt()))
         b.addView(col, lp(0, WRAP, 1f))
-        b.setOnClickListener { goHome() }
+        b.setOnClickListener {
+            if (done) Ads.show(a) { goHome() } else goHome()
+        }
         return b
     }
 
@@ -429,7 +513,6 @@ class ResultUi(private val a: MainActivity) {
         val al = if (on) 1f else 0.45f
         shareBtn.root.alpha = al
         saveBtn.root.alpha = al
-        againBtn.root.alpha = al
     }
 
     // ---------- the work ----------
@@ -522,7 +605,7 @@ class ResultUi(private val a: MainActivity) {
         }
 
         // the stats card
-        fromTo.text = sizeText(orig) + "  \u2192  " + sizeText(out)
+        fromTo.text = sizeText(orig) + " \u2192 " + sizeText(out)
         qualSub.text = tr(
             if (pct == 0) "This file was already well optimized."
             else if (pdf) "No noticeable loss in readability."
@@ -574,10 +657,5 @@ class ResultUi(private val a: MainActivity) {
         } else {
             a.toast(tr("Could not save"))
         }
-    }
-
-    private fun doAgain() {
-        if (!done) return
-        a.pickFiles(pdf)
     }
 }
