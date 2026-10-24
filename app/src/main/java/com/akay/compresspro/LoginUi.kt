@@ -15,64 +15,6 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 
-// soft corner and waves behind the login page
-class LoginDeco(ctx: Context) : View(ctx) {
-    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val path = Path()
-
-    override fun onDraw(c: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val dk = P.dark
-        p.style = Paint.Style.FILL
-        p.shader = null
-
-        // top-left blob
-        path.reset()
-        path.moveTo(0f, 0f)
-        path.lineTo(w * 0.24f, 0f)
-        path.cubicTo(w * 0.22f, h * 0.05f, w * 0.1f, h * 0.1f, 0f, h * 0.17f)
-        path.close()
-        p.color = if (dk) 0x14FFFFFF else 0xFFE8EDFC.toInt()
-        c.drawPath(path, p)
-
-        // big wave
-        path.reset()
-        path.moveTo(0f, h * 0.935f)
-        path.cubicTo(w * 0.3f, h * 0.9f, w * 0.62f, h * 1.0f, w, h * 0.9f)
-        path.lineTo(w, h)
-        path.lineTo(0f, h)
-        path.close()
-        p.shader = LinearGradient(
-            0f, 0f, w, 0f,
-            if (dk) 0x33407BFF else 0xFFD2E4FF.toInt(),
-            if (dk) 0x338A5BFF else 0xFFDBD3FF.toInt(),
-            Shader.TileMode.CLAMP
-        )
-        c.drawPath(path, p)
-
-        // purple wave on the right
-        path.reset()
-        path.moveTo(w, h * 0.8f)
-        path.cubicTo(w * 0.95f, h * 0.9f, w * 0.86f, h * 0.97f, w * 0.72f, h)
-        path.lineTo(w, h)
-        path.close()
-        p.shader = null
-        p.color = if (dk) 0x338A5BFF else 0xFFDAD0FF.toInt()
-        c.drawPath(path, p)
-
-        // blue wave on the left
-        path.reset()
-        path.moveTo(0f, h * 0.965f)
-        path.cubicTo(w * 0.25f, h * 0.945f, w * 0.5f, h * 0.995f, w * 0.72f, h * 0.985f)
-        path.lineTo(w * 0.72f, h)
-        path.lineTo(0f, h)
-        path.close()
-        p.color = if (dk) 0x33407BFF else 0xFFC4DBFF.toInt()
-        c.drawPath(path, p)
-    }
-}
-
 // two photos (5.2 MB -> 1.1 MB). It always fits inside the space it gets.
 class LoginArt(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -239,13 +181,11 @@ fun MainActivity.showLogin(from: String) {
     loginReturn = from
     screen = "login"
 
-    val root = FrameLayout(this)
-    root.addView(LoginDeco(this), FrameLayout.LayoutParams(MATCH, MATCH))
-
     val c = LinearLayout(this)
     c.orientation = LinearLayout.VERTICAL
     c.gravity = Gravity.CENTER_HORIZONTAL
-    c.setPadding(dp(24), dp(10), dp(24), dp(14))
+    // the bottom space lifts the buttons a little higher
+    c.setPadding(dp(24), dp(10), dp(24), dp(56))
 
     // logo tile with the download badge
     val logo = FrameLayout(this)
@@ -337,6 +277,5 @@ fun MainActivity.showLogin(from: String) {
     note.gravity = Gravity.CENTER
     c.addView(note, lpm(MATCH, WRAP, 0, 10, 0, 0))
 
-    root.addView(c, FrameLayout.LayoutParams(MATCH, MATCH))
-    setScreen(root, if (P.dark) P.bg else 0xFFD9DEFB.toInt())
+    setScreen(c, P.bg)
 }
